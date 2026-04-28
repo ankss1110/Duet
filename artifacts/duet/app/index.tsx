@@ -1,4 +1,4 @@
-import { Link } from "expo-router";
+import { useRouter } from "expo-router";
 import { StyleSheet, Text, View, FlatList, Pressable, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSessions } from "@/hooks/useDuet";
@@ -10,6 +10,7 @@ export default function HomeScreen() {
   const { data: sessions, isLoading } = useSessions();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const isWeb = Platform.OS === "web";
 
   if (isLoading) {
@@ -28,12 +29,13 @@ export default function HomeScreen() {
       <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
         Start a shared journal with someone you care about.
       </Text>
-      <Link href="/new" asChild>
-        <Pressable style={[styles.primaryButton, { backgroundColor: colors.primary }]}>
-          <Feather name="plus" size={20} color={colors.primaryForeground} />
-          <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>Start a duet</Text>
-        </Pressable>
-      </Link>
+      <Pressable
+        onPress={() => router.push("/new")}
+        style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+      >
+        <Feather name="plus" size={20} color={colors.primaryForeground} />
+        <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>Start a duet</Text>
+      </Pressable>
     </View>
   );
 
@@ -58,8 +60,9 @@ export default function HomeScreen() {
           if (isRevealed) statusText = "Ready to reveal";
           
           return (
-            <Link href={`/session/${item.id}`} asChild>
-              <Pressable style={({pressed}) => [
+            <Pressable
+              onPress={() => router.push(`/session/${item.id}`)}
+              style={({pressed}) => [
                 styles.card,
                 { 
                   backgroundColor: colors.card,
@@ -97,23 +100,23 @@ export default function HomeScreen() {
                   </Text>
                 </View>
               </Pressable>
-            </Link>
           );
         }}
       />
       
       {sessions && sessions.length > 0 && (
-        <Link href="/new" asChild>
-          <Pressable style={[
+        <Pressable
+          onPress={() => router.push("/new")}
+          style={[
             styles.fab, 
             { 
               backgroundColor: colors.primary,
               bottom: insets.bottom + 24
             }
-          ]}>
-            <Feather name="plus" size={24} color={colors.primaryForeground} />
-          </Pressable>
-        </Link>
+          ]}
+        >
+          <Feather name="plus" size={24} color={colors.primaryForeground} />
+        </Pressable>
       )}
     </View>
   );
