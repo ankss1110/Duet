@@ -1,0 +1,97 @@
+{
+  "prompt_set_name": "v1_core_prompts",
+  "description": "High-quality onboarding prompts designed to drive early engagement and emotional connection in 1:1 sessions",
+  "default_timer_hours": 48,
+  "prompts": [
+    {
+      "id": 1,
+      "category": "current_life",
+      "type": "text_or_link",
+      "prompt": "What song are you currently low-key obsessed with but wouldn’t normally share?",
+      "tone": "playful_honest",
+      "expected_response_time_sec": 20,
+      "order": 1
+    },
+    {
+      "id": 2,
+      "category": "current_life",
+      "type": "text",
+      "prompt": "If you could instantly have one thing to eat right now, what would it be?",
+      "tone": "light_fun",
+      "expected_response_time_sec": 10,
+      "order": 2
+    },
+    {
+      "id": 3,
+      "category": "visual_life",
+      "type": "photo",
+      "prompt": "Take a picture of something within arm’s reach that says a lot about your current life",
+      "tone": "reflective_visual",
+      "expected_response_time_sec": 25,
+      "order": 3
+    },
+    {
+      "id": 4,
+      "category": "discovery",
+      "type": "link_or_text",
+      "prompt": "Share something you discovered recently (YouTube, podcast, creator, article) that you think I’d like",
+      "tone": "personal_recommendation",
+      "expected_response_time_sec": 25,
+      "order": 4
+    },
+    {
+      "id": 5,
+      "category": "personal_light",
+      "type": "text",
+      "prompt": "What’s something that’s been on your mind lately (big or small)?",
+      "tone": "light_reflective",
+      "expected_response_time_sec": 30,
+      "order": 5
+    },
+    {
+      "id": 6,
+      "category": "slam_book",
+      "type": "text",
+      "prompt": "Describe your current life mood in 3 words",
+      "tone": "expressive_quick",
+      "expected_response_time_sec": 10,
+      "order": 6
+    },
+    {
+      "id": 7,
+      "category": "visual_life",
+      "type": "photo",
+      "prompt": "Take a picture of something that made you smile today",
+      "tone": "positive_visual",
+      "expected_response_time_sec": 20,
+      "order": 7
+    },
+    {
+      "id": 8,
+      "category": "imagination",
+      "type": "text",
+      "prompt": "If we could both teleport somewhere this weekend, where are we going?",
+      "tone": "playful_shared",
+      "expected_response_time_sec": 15,
+      "order": 8
+    },
+    {
+      "id": 9,
+      "category": "comfort",
+      "type": "text",
+      "prompt": "What’s your current comfort watch or rewatch?",
+      "tone": "nostalgic_easy",
+      "expected_response_time_sec": 15,
+      "order": 9
+    },
+    {
+      "id": 10,
+      "category": "identity",
+      "type": "text",
+      "prompt": "What’s something very 'you' that you’ve done or enjoyed recently?",
+      "tone": "personal_identity",
+      "expected_response_time_sec": 25,
+      "order": 10
+    }
+  ]
+}

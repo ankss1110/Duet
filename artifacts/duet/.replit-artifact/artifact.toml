@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Duet"
+version = "1.0.0"
+id = "artifacts/duet"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 22486
+
+[services.development]
+run = "pnpm --filter @workspace/duet run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/duet", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/duet", "run", "serve" ]
+
+[services.env]
+PORT = "22486"
+BASE_PATH = "/"

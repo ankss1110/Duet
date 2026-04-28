@@ -1,0 +1,122 @@
+Product Overview
+
+Build a mobile app that helps close friends and siblings stay connected through a turn-based, asynchronous interaction game.
+
+The app creates small, meaningful touchpoints using shared prompts that both users respond to. Responses are revealed only after both participants answer or a timer expires.
+
+The experience should feel intimate, playful, and slightly nostalgic—like a modern digital slam book combined with a lightweight game.
+
+🎯 Target Audience
+Age: 26–36
+Long-distance friends, siblings, close relationships
+People who don’t actively post on social media
+Prefer low-effort but meaningful connection
+💡 Core Concept
+
+Users start 1:1 sessions with friends.
+
+Each session functions like a turn-based game:
+
+Both users receive the same prompt
+Each submits a response (text, image, or link)
+Responses remain hidden until both users answer OR timer expires
+Once revealed, both users can view each other’s responses
+🔁 Core Game Loop
+User opens app → sees active session
+Prompt is shown (one at a time)
+User submits response (under 30 seconds)
+Wait for other user
+🔒 Reveal unlocks (on both responses or timer expiry)
+Users view responses + react
+Next prompt becomes available
+🔑 Core Features (MVP)
+1. 1:1 Sessions
+Users can add friends
+Start multiple parallel sessions
+Each session has its own history and streak
+2. Prompt System
+Only one active prompt per session
+Prompt types:
+Text
+Photo
+Link (YouTube, Spotify, etc.)
+3. Sync Reveal Mechanic
+Responses are hidden until:
+Both users answer OR
+Timer expires (24h or 72h)
+Adds anticipation and reciprocity
+4. Timer System
+Each prompt has a countdown (default 48h)
+If one user doesn’t respond:
+Reveal still happens after timer
+Streak may break
+5. Reactions (Lightweight)
+Emoji-only reactions after reveal
+No comments initially
+6. Streak System (Soft Gamification)
+🔥 Streak increases when both users respond before timer
+Streak breaks if one misses
+Keep low-pressure, not aggressive
+🧩 Prompt Design
+
+Prompts should feel:
+
+Quick to answer (<30 seconds)
+Personal but not heavy
+Fun, visual, and reflective
+Categories + Examples
+
+🎵 Current Life
+
+What’s your current favorite song?
+What are you craving right now?
+
+📸 Visual
+
+Take a picture of something near you
+Show your current workspace
+
+🎧 Discovery
+
+Share something you’re obsessed with lately
+Recommend a show, book, or creator
+
+💭 Personal (Light)
+
+Current dream vacation?
+What’s been on your mind lately?
+
+🎨 Slam Book Vibe
+
+Favorite color right now?
+One word to describe your week
+🔔 Notifications
+“Your turn to answer”
+“They’ve answered—unlock the reveal”
+“Your streak is at risk”
+🎨 Design Direction
+Cozy, nostalgic, warm
+Avoid social media aesthetics
+Focus on intimacy and simplicity
+Soft colors, minimal UI, content-first
+🚫 Avoid (MVP Scope)
+No public feeds
+No followers
+No algorithm
+No heavy social features
+No long-form chat
+📊 Success Metrics
+Response rate per prompt
+% of prompts where both users respond
+Weekly active sessions
+7-day retention
+💥 Future Enhancements
+Memory resurfacing (“3 months ago…”)
+Voice note responses
+AI-personalized prompts
+Group sessions (later phase)
+🧠 Product Philosophy
+
+This is not a social network.
+
+This is a private, turn-based connection ritual that helps people stay close through small, meaningful interactions.

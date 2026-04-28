@@ -4,6 +4,10 @@
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
+## Artifacts
+
+- **Duet** (`artifacts/duet`) — Expo mobile app for close friends/siblings to stay connected through a turn-based prompt ritual. Frontend-only with AsyncStorage persistence. Simulates a partner so the user experiences the full reveal flow without a second device. Uses Fraunces (serif) + Inter (sans), warm cream/terracotta/sage palette.
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
