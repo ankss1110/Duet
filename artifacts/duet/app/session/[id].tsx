@@ -8,6 +8,7 @@ import {
   Keyboard,
   Platform,
   ScrollView,
+  Modal,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,10 +19,12 @@ import {
   useSubmitResponse,
   useNextPrompt,
   useAddReaction,
+  useSuggestPrompt,
+  useRemoveSuggestion,
 } from "@/hooks/useDuet";
 import { PROMPTS, REACTIONS } from "@/constants/prompts";
 import { formatTimeLeft } from "@/utils/time";
-import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, Layout, SlideInDown } from "react-native-reanimated";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
@@ -36,13 +39,20 @@ export default function SessionDetailScreen() {
   const submitResponse = useSubmitResponse();
   const nextPrompt = useNextPrompt();
   const addReaction = useAddReaction();
+  const suggestPrompt = useSuggestPrompt();
+  const removeSuggestion = useRemoveSuggestion();
 
   const [inputText, setInputText] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showSuggestModal, setShowSuggestModal] = useState(false);
+  const [suggestText, setSuggestText] = useState("");
+  const [suggestType, setSuggestType] = useState<"text" | "photo">("text");
 
   if (isLoading || !duet) return null;
 
-  const currentPrompt = PROMPTS[duet.currentPromptIndex % PROMPTS.length];
+  const currentPrompt = duet.customPrompt
+    ? { prompt: duet.customPrompt, type: (duet.customPromptType ?? "text") as "text" | "photo" }
+    : PROMPTS[duet.currentPromptIndex % PROMPTS.length];
   const isWaitingForPartner = !duet.partnerJoined;
   const isYourTurn = !isWaitingForPartner && !duet.myResponse;
   const isWaiting = !isWaitingForPartner && duet.myResponse && !duet.revealed;
@@ -314,6 +324,170 @@ export default function SessionDetailScreen() {
     );
   };
 
+  const renderSuggestButton = () => {
+    if (isWaitingForPartner) return null;
+    const queue = duet.pendingSuggestions;
+    return (
+      <View style={styles.suggestRow}>
+        <Pressable
+          onPress={() => setShowSuggestModal(true)}
+          style={[styles.suggestBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+        >
+          <Feather name="plus-circle" size={16} color={colors.primary} />
+          <Text style={[styles.suggestBtnText, { color: colors.primary }]}>
+            Suggest a prompt
+          </Text>
+        </Pressable>
+        {queue.length > 0 && (
+          <View style={[styles.queueBadge, { backgroundColor: colors.secondary }]}>
+            <Feather name="list" size={13} color={colors.primary} />
+            <Text style={[styles.queueBadgeText, { color: colors.primary }]}>
+              {queue.length} queued
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderSuggestModal = () => (
+    <Modal
+      visible={showSuggestModal}
+      transparent
+      animationType="none"
+      onRequestClose={() => setShowSuggestModal(false)}
+    >
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={() => { setShowSuggestModal(false); Keyboard.dismiss(); }}
+      >
+        <Animated.View
+          entering={SlideInDown.springify().damping(20)}
+          style={[styles.modalSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 }]}
+        >
+          <Pressable onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHandleRow}>
+              <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+            </View>
+            <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
+              Suggest a prompt
+            </Text>
+            <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
+              It'll be used as the next question once you both move on.
+            </Text>
+
+            {/* Queue peek */}
+            {duet.pendingSuggestions.length > 0 && (
+              <View style={[styles.queuePeek, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+                <Text style={[styles.queuePeekLabel, { color: colors.mutedForeground }]}>
+                  Already queued
+                </Text>
+                {duet.pendingSuggestions.map((s) => (
+                  <View key={s.id} style={styles.queueItem}>
+                    <Feather
+                      name={s.type === "photo" ? "camera" : "type"}
+                      size={13}
+                      color={colors.mutedForeground}
+                    />
+                    <Text style={[styles.queueItemText, { color: colors.foreground }]} numberOfLines={1}>
+                      {s.text}
+                    </Text>
+                    {s.suggestedByMe && (
+                      <Pressable
+                        onPress={() =>
+                          removeSuggestion.mutate({ duetId: duet.id, suggestionId: s.id })
+                        }
+                        hitSlop={8}
+                      >
+                        <Feather name="x" size={14} color={colors.mutedForeground} />
+                      </Pressable>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Type toggle */}
+            <View style={styles.typeToggle}>
+              {(["text", "photo"] as const).map((t) => (
+                <Pressable
+                  key={t}
+                  onPress={() => setSuggestType(t)}
+                  style={[
+                    styles.typeOption,
+                    {
+                      backgroundColor:
+                        suggestType === t ? colors.primary : colors.background,
+                      borderColor: suggestType === t ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Feather
+                    name={t === "photo" ? "camera" : "type"}
+                    size={14}
+                    color={suggestType === t ? colors.primaryForeground : colors.mutedForeground}
+                  />
+                  <Text
+                    style={[
+                      styles.typeOptionText,
+                      {
+                        color:
+                          suggestType === t ? colors.primaryForeground : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {t === "photo" ? "Photo" : "Written"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Text input */}
+            <TextInput
+              style={[
+                styles.suggestInput,
+                { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground },
+              ]}
+              placeholder="What's a question you'd love to answer together?"
+              placeholderTextColor={colors.mutedForeground}
+              multiline
+              value={suggestText}
+              onChangeText={setSuggestText}
+              autoFocus
+            />
+
+            <Pressable
+              style={[
+                styles.submitButton,
+                { backgroundColor: colors.primary },
+                (suggestText.trim().length < 5 || suggestPrompt.isPending) && { opacity: 0.5 },
+              ]}
+              onPress={() => {
+                if (suggestText.trim().length < 5) return;
+                suggestPrompt.mutate(
+                  { duetId: duet.id, text: suggestText.trim(), type: suggestType },
+                  {
+                    onSuccess: () => {
+                      setSuggestText("");
+                      setSuggestType("text");
+                      setShowSuggestModal(false);
+                    },
+                  },
+                );
+              }}
+              disabled={suggestText.trim().length < 5 || suggestPrompt.isPending}
+            >
+              <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>
+                {suggestPrompt.isPending ? "Adding..." : "Add to queue"}
+              </Text>
+              <Feather name="check" size={16} color={colors.primaryForeground} />
+            </Pressable>
+          </Pressable>
+        </Animated.View>
+      </Pressable>
+    </Modal>
+  );
+
   const renderHistory = () => {
     if (!duet.history || duet.history.length === 0) return null;
 
@@ -321,7 +495,9 @@ export default function SessionDetailScreen() {
       <View style={styles.historyContainer}>
         <Text style={[styles.historyTitle, { color: colors.mutedForeground }]}>Past Memories</Text>
         {duet.history.map((hist) => {
-          const prompt = PROMPTS[hist.promptIndex % PROMPTS.length];
+          const prompt = hist.customPrompt
+            ? { prompt: hist.customPrompt, type: (hist.customPromptType ?? "text") as "text" | "photo" }
+            : PROMPTS[hist.promptIndex % PROMPTS.length];
           return (
             <View
               key={hist.roundId}
@@ -442,12 +618,14 @@ export default function SessionDetailScreen() {
         >
           {renderInviteState()}
           {renderPromptCard()}
+          {renderSuggestButton()}
           {renderInput()}
           {renderWaitingState()}
           {renderRevealedState()}
           {renderHistory()}
         </ScrollView>
       </View>
+      {renderSuggestModal()}
     </KeyboardAvoidingView>
   );
 }
@@ -735,4 +913,110 @@ const styles = StyleSheet.create({
     borderRadius: 100,
   },
   emojiText: { fontSize: 16 },
+
+  suggestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 16,
+  },
+  suggestBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 100,
+    borderWidth: 1,
+  },
+  suggestBtnText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+  },
+  queueBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 100,
+  },
+  queueBadgeText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingTop: 12,
+    gap: 16,
+  },
+  sheetHandleRow: { alignItems: "center", marginBottom: 4 },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2 },
+  sheetTitle: {
+    fontFamily: "Fraunces_600SemiBold",
+    fontSize: 22,
+  },
+  sheetSubtitle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: -8,
+  },
+  queuePeek: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 8,
+  },
+  queuePeekLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  queueItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  queueItemText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    flex: 1,
+  },
+  typeToggle: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  typeOption: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 100,
+    borderWidth: 1,
+  },
+  typeOptionText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+  },
+  suggestInput: {
+    minHeight: 100,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    lineHeight: 22,
+    textAlignVertical: "top",
+  },
 });

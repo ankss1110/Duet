@@ -93,3 +93,33 @@ export function useAddReaction() {
     },
   });
 }
+
+export function useSuggestPrompt() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      duetId,
+      text,
+      type,
+    }: {
+      duetId: string;
+      text: string;
+      type: "text" | "photo";
+    }) => api.suggestPrompt(duetId, text, type),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["duet", data.id], data);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    },
+  });
+}
+
+export function useRemoveSuggestion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ duetId, suggestionId }: { duetId: string; suggestionId: string }) =>
+      api.removeSuggestion(duetId, suggestionId),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["duet", data.id], data);
+    },
+  });
+}

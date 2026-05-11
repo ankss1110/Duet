@@ -41,11 +41,20 @@ export type CreateUserResponse = UserResponse & { deviceToken: string };
 export type HistoryItem = {
   roundId: string;
   promptIndex: number;
+  customPrompt: string | null;
+  customPromptType: string | null;
   myResponse: string;
   partnerResponse: string;
   myReaction: string | null;
   partnerReaction: string | null;
   completedAt: string;
+};
+
+export type PromptSuggestion = {
+  id: string;
+  text: string;
+  type: string;
+  suggestedByMe: boolean;
 };
 
 export type DuetState = {
@@ -60,10 +69,13 @@ export type DuetState = {
   currentPromptIndex: number;
   currentPromptStartedAt: string;
   duetCreatedAt: string;
+  customPrompt: string | null;
+  customPromptType: string | null;
   myResponse: string | null;
   partnerResponse: string | null;
   revealed: boolean;
   history: HistoryItem[];
+  pendingSuggestions: PromptSuggestion[];
 };
 
 export const api = {
@@ -113,4 +125,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ roundId, reaction }),
     }),
+
+  suggestPrompt: (id: string, text: string, type: "text" | "photo") =>
+    request<DuetState>(`/duets/${id}/suggest`, {
+      method: "POST",
+      body: JSON.stringify({ text, type }),
+    }),
+
+  removeSuggestion: (id: string, suggestionId: string) =>
+    request<DuetState>(`/duets/${id}/suggest/${suggestionId}`, { method: "DELETE" }),
 };

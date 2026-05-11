@@ -7,6 +7,8 @@ export const roundsTable = pgTable("rounds", {
   id: text("id").primaryKey(),
   duetId: text("duet_id").notNull().references(() => duetsTable.id),
   promptIndex: integer("prompt_index").notNull(),
+  customPrompt: text("custom_prompt"),
+  customPromptType: text("custom_prompt_type"),
   creatorResponse: text("creator_response"),
   partnerResponse: text("partner_response"),
   creatorReaction: text("creator_reaction"),

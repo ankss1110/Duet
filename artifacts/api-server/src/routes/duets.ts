@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { db, duetsTable, roundsTable, usersTable } from "@workspace/db";
-import { and, desc, eq, isNull, not, or } from "drizzle-orm";
+import { db, duetsTable, roundsTable, usersTable, promptSuggestionsTable } from "@workspace/db";
+import { and, asc, desc, eq, isNull, not, or } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import type { Duet, Round } from "@workspace/db";
+import type { Duet, Round, PromptSuggestion } from "@workspace/db";
 
 const router = Router();
 
@@ -20,6 +20,7 @@ function formatDuetState(
   duet: Duet,
   activeRound: Round | null,
   historyRounds: Round[],
+  pendingSuggestions: PromptSuggestion[],
   userId: string,
 ) {
   const isCreator = duet.creatorId === userId;
@@ -39,17 +40,27 @@ function formatDuetState(
     currentPromptIndex: duet.currentPromptIndex,
     currentPromptStartedAt: duet.currentPromptStartedAt.toISOString(),
     duetCreatedAt: duet.createdAt.toISOString(),
+    customPrompt: activeRound?.customPrompt ?? null,
+    customPromptType: activeRound?.customPromptType ?? null,
     myResponse: myRaw ?? null,
     partnerResponse: revealed ? (theirRaw ?? null) : null,
     revealed,
     history: historyRounds.map((r) => ({
       roundId: r.id,
       promptIndex: r.promptIndex,
+      customPrompt: r.customPrompt ?? null,
+      customPromptType: r.customPromptType ?? null,
       myResponse: (isCreator ? r.creatorResponse : r.partnerResponse) ?? "",
       partnerResponse: (isCreator ? r.partnerResponse : r.creatorResponse) ?? "",
       myReaction: (isCreator ? r.creatorReaction : r.partnerReaction) ?? null,
       partnerReaction: (isCreator ? r.partnerReaction : r.creatorReaction) ?? null,
       completedAt: r.completedAt?.toISOString() ?? "",
+    })),
+    pendingSuggestions: pendingSuggestions.map((s) => ({
+      id: s.id,
+      text: s.promptText,
+      type: s.promptType,
+      suggestedByMe: s.suggestedById === userId,
     })),
   };
 }
@@ -76,15 +87,26 @@ async function getFullDuetState(duetId: string, userId: string) {
     .where(eq(duetsTable.id, duetId));
   if (!duet) return null;
 
-  const activeRound = await getOrCreateActiveRound(duetId, duet.currentPromptIndex);
+  const [activeRound, historyRounds, pendingSuggestions] = await Promise.all([
+    getOrCreateActiveRound(duetId, duet.currentPromptIndex),
+    db
+      .select()
+      .from(roundsTable)
+      .where(and(eq(roundsTable.duetId, duetId), not(isNull(roundsTable.completedAt))))
+      .orderBy(desc(roundsTable.completedAt)),
+    db
+      .select()
+      .from(promptSuggestionsTable)
+      .where(
+        and(
+          eq(promptSuggestionsTable.duetId, duetId),
+          eq(promptSuggestionsTable.status, "pending"),
+        ),
+      )
+      .orderBy(asc(promptSuggestionsTable.createdAt)),
+  ]);
 
-  const historyRounds = await db
-    .select()
-    .from(roundsTable)
-    .where(and(eq(roundsTable.duetId, duetId), not(isNull(roundsTable.completedAt))))
-    .orderBy(desc(roundsTable.completedAt));
-
-  return formatDuetState(duet, activeRound, historyRounds, userId);
+  return formatDuetState(duet, activeRound, historyRounds, pendingSuggestions, userId);
 }
 
 function str(p: string | string[]): string {
@@ -108,7 +130,9 @@ router.get("/duets", requireAuth, async (req, res) => {
 router.post("/duets", requireAuth, async (req, res) => {
   const { partnerName, partnerAvatarColor, partnerAvatarIcon } = req.body;
   if (!partnerName || !partnerAvatarColor || !partnerAvatarIcon) {
-    res.status(400).json({ error: "partnerName, partnerAvatarColor, and partnerAvatarIcon are required" });
+    res
+      .status(400)
+      .json({ error: "partnerName, partnerAvatarColor, and partnerAvatarIcon are required" });
     return;
   }
 
@@ -300,11 +324,39 @@ router.post("/duets/:id/next", requireAuth, async (req, res) => {
     })
     .where(eq(duetsTable.id, id));
 
-  await db.insert(roundsTable).values({
-    id: crypto.randomUUID(),
-    duetId: id,
-    promptIndex: newPromptIndex,
-  });
+  // Check for a queued custom prompt suggestion
+  const [nextSuggestion] = await db
+    .select()
+    .from(promptSuggestionsTable)
+    .where(
+      and(
+        eq(promptSuggestionsTable.duetId, id),
+        eq(promptSuggestionsTable.status, "pending"),
+      ),
+    )
+    .orderBy(asc(promptSuggestionsTable.createdAt))
+    .limit(1);
+
+  if (nextSuggestion) {
+    await db
+      .update(promptSuggestionsTable)
+      .set({ status: "used", usedAt: new Date() })
+      .where(eq(promptSuggestionsTable.id, nextSuggestion.id));
+
+    await db.insert(roundsTable).values({
+      id: crypto.randomUUID(),
+      duetId: id,
+      promptIndex: newPromptIndex,
+      customPrompt: nextSuggestion.promptText,
+      customPromptType: nextSuggestion.promptType,
+    });
+  } else {
+    await db.insert(roundsTable).values({
+      id: crypto.randomUUID(),
+      duetId: id,
+      promptIndex: newPromptIndex,
+    });
+  }
 
   const state = await getFullDuetState(id, userId);
   res.json(state);
@@ -338,6 +390,67 @@ router.post("/duets/:id/react", requireAuth, async (req, res) => {
     .update(roundsTable)
     .set(updateData)
     .where(and(eq(roundsTable.id, roundId), eq(roundsTable.duetId, id)));
+
+  const state = await getFullDuetState(id, userId);
+  res.json(state);
+});
+
+// POST /duets/:id/suggest - suggest a custom prompt
+router.post("/duets/:id/suggest", requireAuth, async (req, res) => {
+  const id = str(req.params.id);
+  const { text, type = "text" } = req.body;
+  const userId = req.user.id;
+
+  if (!text || typeof text !== "string" || text.trim().length < 5) {
+    res.status(400).json({ error: "text must be at least 5 characters" });
+    return;
+  }
+
+  const [duet] = await db.select().from(duetsTable).where(eq(duetsTable.id, id));
+  if (!duet) {
+    res.status(404).json({ error: "Duet not found" });
+    return;
+  }
+  if (duet.creatorId !== userId && duet.partnerId !== userId) {
+    res.status(403).json({ error: "Not a member of this duet" });
+    return;
+  }
+
+  await db.insert(promptSuggestionsTable).values({
+    id: crypto.randomUUID(),
+    duetId: id,
+    suggestedById: userId,
+    promptText: text.trim(),
+    promptType: type === "photo" ? "photo" : "text",
+  });
+
+  const state = await getFullDuetState(id, userId);
+  res.status(201).json(state);
+});
+
+// DELETE /duets/:id/suggest/:suggestionId - remove a queued suggestion
+router.delete("/duets/:id/suggest/:suggestionId", requireAuth, async (req, res) => {
+  const id = str(req.params.id);
+  const suggestionId = str(req.params.suggestionId);
+  const userId = req.user.id;
+
+  const [suggestion] = await db
+    .select()
+    .from(promptSuggestionsTable)
+    .where(eq(promptSuggestionsTable.id, suggestionId));
+
+  if (!suggestion || suggestion.duetId !== id) {
+    res.status(404).json({ error: "Suggestion not found" });
+    return;
+  }
+  if (suggestion.suggestedById !== userId) {
+    res.status(403).json({ error: "You can only remove your own suggestions" });
+    return;
+  }
+
+  await db
+    .delete(promptSuggestionsTable)
+    .where(eq(promptSuggestionsTable.id, suggestionId));
 
   const state = await getFullDuetState(id, userId);
   res.json(state);
