@@ -1,63 +1,71 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Platform } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  Pressable,
+  ScrollView,
+  Platform,
+} from "react-native";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { AVATAR_COLORS, AVATAR_ICONS } from "@/constants/prompts";
 import { Feather } from "@expo/vector-icons";
-import { useCreateDuet } from "@/hooks/useDuet";
-import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+import { useAuth } from "@/contexts/AuthContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-export default function NewSessionScreen() {
+export default function SetupScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { signUp } = useAuth();
   const [name, setName] = useState("");
-  const [selectedColor, setSelectedColor] = useState(AVATAR_COLORS[0]);
+  const [selectedColor, setSelectedColor] = useState(AVATAR_COLORS[2]);
   const [selectedIcon, setSelectedIcon] = useState(AVATAR_ICONS[0]);
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState("");
 
-  const createDuet = useCreateDuet();
-
-  const handleCreate = () => {
+  const handleStart = async () => {
     if (!name.trim()) return;
-    createDuet.mutate(
-      {
-        partnerName: name.trim(),
-        partnerAvatarColor: selectedColor,
-        partnerAvatarIcon: selectedIcon,
-      },
-      {
-        onSuccess: (duet) => {
-          router.replace(`/session/${duet.id}`);
-        },
-      },
-    );
+    setIsPending(true);
+    setError("");
+    try {
+      await signUp(name.trim(), selectedColor, selectedIcon);
+      router.replace("/");
+    } catch (e: any) {
+      setError(e?.message || "Something went wrong. Please try again.");
+    } finally {
+      setIsPending(false);
+    }
   };
 
   return (
-    <KeyboardAwareScrollViewCompat
+    <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{
-        paddingTop: 24,
-        paddingBottom: insets.bottom + 40,
-        paddingHorizontal: 20,
-      }}
-      bottomOffset={20}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 },
+      ]}
+      keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.foreground }]}>Who are you writing with?</Text>
+      <View style={styles.hero}>
+        <Text style={[styles.title, { color: colors.foreground }]}>Duet</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Create a private space for just the two of you.
+          A quiet ritual for two people who want to stay close.
         </Text>
       </View>
 
-      <View style={styles.previewContainer}>
-        <View style={[styles.previewAvatar, { backgroundColor: selectedColor }]}>
+      <View style={styles.avatarPreview}>
+        <View style={[styles.avatar, { backgroundColor: selectedColor }]}>
           <Feather name={selectedIcon as any} size={40} color="#fff" />
         </View>
+        <Text style={[styles.previewName, { color: colors.foreground }]}>
+          {name || "You"}
+        </Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={[styles.label, { color: colors.foreground }]}>Their Name</Text>
+        <Text style={[styles.label, { color: colors.foreground }]}>Your name</Text>
         <TextInput
           style={[
             styles.input,
@@ -67,21 +75,19 @@ export default function NewSessionScreen() {
               color: colors.foreground,
             },
           ]}
-          placeholder="e.g. Sarah"
+          placeholder="What do they call you?"
           placeholderTextColor={colors.mutedForeground}
           value={name}
           onChangeText={setName}
           autoFocus={Platform.OS !== "web"}
+          returnKeyType="done"
+          onSubmitEditing={handleStart}
         />
       </View>
 
       <View style={styles.section}>
         <Text style={[styles.label, { color: colors.foreground }]}>Color</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.row}
-        >
+        <View style={styles.row}>
           {AVATAR_COLORS.map((c) => (
             <Pressable
               key={c}
@@ -89,96 +95,107 @@ export default function NewSessionScreen() {
               style={[
                 styles.colorOption,
                 { backgroundColor: c },
-                selectedColor === c && styles.selectedRing,
-                selectedColor === c && { borderColor: colors.foreground },
+                selectedColor === c && [styles.selectedRing, { borderColor: colors.foreground }],
               ]}
             />
           ))}
-        </ScrollView>
+        </View>
       </View>
 
       <View style={styles.section}>
         <Text style={[styles.label, { color: colors.foreground }]}>Symbol</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.row}
-        >
+        <View style={styles.row}>
           {AVATAR_ICONS.map((icon) => (
             <Pressable
               key={icon}
               onPress={() => setSelectedIcon(icon)}
               style={[
                 styles.iconOption,
-                { backgroundColor: colors.card, borderColor: colors.border },
-                selectedIcon === icon && {
-                  borderColor: colors.primary,
-                  backgroundColor: colors.secondary,
+                {
+                  backgroundColor: selectedIcon === icon ? colors.secondary : colors.card,
+                  borderColor: selectedIcon === icon ? colors.primary : colors.border,
                 },
               ]}
             >
               <Feather
                 name={icon as any}
-                size={24}
+                size={20}
                 color={selectedIcon === icon ? colors.primary : colors.mutedForeground}
               />
             </Pressable>
           ))}
-        </ScrollView>
+        </View>
       </View>
+
+      {error ? (
+        <Text style={[styles.errorText, { color: colors.destructive }]}>{error}</Text>
+      ) : null}
 
       <Pressable
         style={[
-          styles.submitButton,
+          styles.button,
           { backgroundColor: colors.primary },
-          (!name.trim() || createDuet.isPending) && { opacity: 0.5 },
+          (!name.trim() || isPending) && { opacity: 0.5 },
         ]}
-        onPress={handleCreate}
-        disabled={!name.trim() || createDuet.isPending}
+        onPress={handleStart}
+        disabled={!name.trim() || isPending}
       >
-        <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>
-          {createDuet.isPending ? "Creating..." : "Start Duet"}
+        <Text style={[styles.buttonText, { color: colors.primaryForeground }]}>
+          {isPending ? "Setting up..." : "Start Duet"}
         </Text>
       </Pressable>
-    </KeyboardAwareScrollViewCompat>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    marginBottom: 40,
+  content: {
+    paddingHorizontal: 24,
     alignItems: "center",
   },
+  hero: {
+    alignItems: "center",
+    marginBottom: 40,
+  },
   title: {
-    fontFamily: "Fraunces_600SemiBold",
-    fontSize: 28,
-    marginBottom: 8,
-    textAlign: "center",
+    fontFamily: "Fraunces_700Bold",
+    fontSize: 48,
+    marginBottom: 12,
   },
   subtitle: {
     fontFamily: "Inter_400Regular",
     fontSize: 16,
     textAlign: "center",
+    lineHeight: 24,
+    maxWidth: 280,
   },
-  previewContainer: {
+  avatarPreview: {
     alignItems: "center",
     marginBottom: 40,
+    gap: 12,
   },
-  previewAvatar: {
+  avatar: {
     width: 96,
     height: 96,
     borderRadius: 48,
     alignItems: "center",
     justifyContent: "center",
   },
-  section: { marginBottom: 32 },
+  previewName: {
+    fontFamily: "Fraunces_600SemiBold",
+    fontSize: 20,
+  },
+  section: {
+    width: "100%",
+    marginBottom: 28,
+  },
   label: {
     fontFamily: "Inter_600SemiBold",
-    fontSize: 14,
-    marginBottom: 12,
+    fontSize: 13,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
+    marginBottom: 12,
   },
   input: {
     fontFamily: "Inter_500Medium",
@@ -186,32 +203,45 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
+    width: "100%",
   },
   row: {
-    gap: 16,
-    paddingRight: 20,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
   },
   colorOption: {
     width: 48,
     height: 48,
     borderRadius: 24,
+    borderWidth: 3,
+    borderColor: "transparent",
   },
-  selectedRing: { borderWidth: 3 },
+  selectedRing: {
+    borderWidth: 3,
+  },
   iconOption: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  submitButton: {
+  errorText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  button: {
+    width: "100%",
     padding: 18,
     borderRadius: 100,
     alignItems: "center",
-    marginTop: 20,
+    marginTop: 8,
   },
-  submitButtonText: {
+  buttonText: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 16,
   },

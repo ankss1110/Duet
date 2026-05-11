@@ -21,9 +21,9 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
@@ -31,16 +31,26 @@ const queryClient = new QueryClient();
 function RootLayoutNav() {
   const colors = useColors();
   return (
-    <Stack screenOptions={{ 
-      headerBackTitle: "Back",
-      headerStyle: { backgroundColor: colors.background },
-      headerTintColor: colors.foreground,
-      headerTitleStyle: { fontFamily: "Fraunces_600SemiBold" },
-      headerShadowVisible: false,
-      contentStyle: { backgroundColor: colors.background }
-    }}>
-      <Stack.Screen name="index" options={{ title: "Duet", headerTitleStyle: { fontFamily: "Fraunces_700Bold", fontSize: 24 } }} />
-      <Stack.Screen name="new" options={{ title: "New Session", presentation: "modal" }} />
+    <Stack
+      screenOptions={{
+        headerBackTitle: "Back",
+        headerStyle: { backgroundColor: colors.background },
+        headerTintColor: colors.foreground,
+        headerTitleStyle: { fontFamily: "Fraunces_600SemiBold" },
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: colors.background },
+      }}
+    >
+      <Stack.Screen
+        name="index"
+        options={{
+          title: "Duet",
+          headerTitleStyle: { fontFamily: "Fraunces_700Bold", fontSize: 24 },
+        }}
+      />
+      <Stack.Screen name="setup" options={{ headerShown: false }} />
+      <Stack.Screen name="new" options={{ title: "New Duet", presentation: "modal" }} />
+      <Stack.Screen name="join" options={{ title: "Join a Duet", presentation: "modal" }} />
       <Stack.Screen name="session/[id]" options={{ title: "", headerShown: false }} />
     </Stack>
   );
@@ -74,15 +84,17 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView>
-            <KeyboardProvider>
-              <RootLayoutNav />
-            </KeyboardProvider>
-          </GestureHandlerRootView>
-        </QueryClientProvider>
-      </ErrorBoundary>
+      <AuthProvider>
+        <ErrorBoundary>
+          <QueryClientProvider client={queryClient}>
+            <GestureHandlerRootView>
+              <KeyboardProvider>
+                <RootLayoutNav />
+              </KeyboardProvider>
+            </GestureHandlerRootView>
+          </QueryClientProvider>
+        </ErrorBoundary>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

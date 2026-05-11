@@ -1,58 +1,52 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, TextInput, Keyboard, Platform, ScrollView } from "react-native";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  TextInput,
+  Keyboard,
+  Platform,
+  ScrollView,
+} from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
-import { useSession, useSubmitResponse, useSimulatePartnerResponse, useRevealResponses, useNextPrompt, useAddReaction } from "@/hooks/useDuet";
+import {
+  useDuet,
+  useSubmitResponse,
+  useNextPrompt,
+  useAddReaction,
+} from "@/hooks/useDuet";
 import { PROMPTS, REACTIONS } from "@/constants/prompts";
 import { formatTimeLeft } from "@/utils/time";
 import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
-import * as ImagePicker from 'expo-image-picker';
+import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 export default function SessionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: session, isLoading } = useSession(id);
+  const { data: duet, isLoading } = useDuet(id);
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  
+
   const submitResponse = useSubmitResponse();
-  const simulatePartner = useSimulatePartnerResponse();
-  const revealResponses = useRevealResponses();
   const nextPrompt = useNextPrompt();
   const addReaction = useAddReaction();
 
   const [inputText, setInputText] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Demo partner simulation
-    if (session && session.currentPromptUserResponse && !session.currentPromptPartnerResponse && !session.revealed) {
-      const timer = setTimeout(() => {
-        simulatePartner.mutate({ sessionId: session.id });
-      }, 8000 + Math.random() * 5000); // 8-13s delay
-      return () => clearTimeout(timer);
-    }
-    
-    // Auto-reveal when both have responded
-    if (session && session.currentPromptUserResponse && session.currentPromptPartnerResponse && !session.revealed) {
-      const timer = setTimeout(() => {
-        revealResponses.mutate({ sessionId: session.id });
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [session]);
+  if (isLoading || !duet) return null;
 
-  if (isLoading || !session) return null;
-
-  const currentPrompt = PROMPTS[session.currentPromptIndex % PROMPTS.length];
-  const isYourTurn = !session.currentPromptUserResponse;
-  const isWaiting = session.currentPromptUserResponse && !session.currentPromptPartnerResponse;
-  const isReadyToReveal = session.currentPromptUserResponse && session.currentPromptPartnerResponse && !session.revealed;
-  const isRevealed = session.revealed;
+  const currentPrompt = PROMPTS[duet.currentPromptIndex % PROMPTS.length];
+  const isWaitingForPartner = !duet.partnerJoined;
+  const isYourTurn = !isWaitingForPartner && !duet.myResponse;
+  const isWaiting = !isWaitingForPartner && duet.myResponse && !duet.revealed;
+  const isRevealed = duet.revealed;
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -61,7 +55,6 @@ export default function SessionDetailScreen() {
       aspect: [4, 3],
       quality: 0.8,
     });
-
     if (!result.canceled) {
       setSelectedImage(result.assets[0].uri);
     }
@@ -70,10 +63,10 @@ export default function SessionDetailScreen() {
   const handleSubmit = () => {
     if (currentPrompt.type === "photo") {
       if (!selectedImage) return;
-      submitResponse.mutate({ sessionId: session.id, response: selectedImage });
+      submitResponse.mutate({ duetId: duet.id, response: selectedImage });
     } else {
       if (!inputText.trim()) return;
-      submitResponse.mutate({ sessionId: session.id, response: inputText.trim() });
+      submitResponse.mutate({ duetId: duet.id, response: inputText.trim() });
       setInputText("");
       Keyboard.dismiss();
     }
@@ -85,38 +78,65 @@ export default function SessionDetailScreen() {
         <Feather name="arrow-left" size={24} color={colors.foreground} />
       </Pressable>
       <View style={styles.headerCenter}>
-        <View style={[styles.miniAvatar, { backgroundColor: session.partnerAvatarColor }]}>
-          <Feather name={session.partnerAvatarIcon as any} size={14} color="#fff" />
+        <View style={[styles.miniAvatar, { backgroundColor: duet.partnerAvatarColor }]}>
+          <Feather name={duet.partnerAvatarIcon as any} size={14} color="#fff" />
         </View>
-        <Text style={[styles.headerName, { color: colors.foreground }]}>{session.partnerName}</Text>
+        <Text style={[styles.headerName, { color: colors.foreground }]}>{duet.partnerName}</Text>
       </View>
       <View style={styles.headerRight}>
-        <View style={[styles.streakBadge, { backgroundColor: colors.secondary }]}>
-          <Feather name="zap" size={14} color={colors.primary} />
-          <Text style={[styles.streakText, { color: colors.primary }]}>{session.streak}</Text>
-        </View>
+        {duet.streak > 0 && (
+          <View style={[styles.streakBadge, { backgroundColor: colors.secondary }]}>
+            <Feather name="zap" size={14} color={colors.primary} />
+            <Text style={[styles.streakText, { color: colors.primary }]}>{duet.streak}</Text>
+          </View>
+        )}
       </View>
     </View>
   );
 
-  const renderPromptCard = () => (
-    <Animated.View layout={Layout.springify()} style={[styles.promptCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.promptCategory, { color: colors.mutedForeground }]}>
-        PROMPT {session.currentPromptIndex + 1}
-      </Text>
-      <Text style={[styles.promptText, { color: colors.foreground }]}>
-        {currentPrompt.prompt}
-      </Text>
-      <View style={styles.promptFooter}>
-        <View style={styles.timerBadge}>
-          <Feather name="clock" size={14} color={colors.mutedForeground} />
-          <Text style={[styles.timerText, { color: colors.mutedForeground }]}>
-            {formatTimeLeft(session.currentPromptStartedAt)}
-          </Text>
+  const renderInviteState = () => {
+    if (!isWaitingForPartner) return null;
+    return (
+      <Animated.View
+        entering={FadeInDown.springify()}
+        style={[styles.inviteCard, { backgroundColor: colors.secondary }]}
+      >
+        <Feather name="link" size={28} color={colors.primary} />
+        <Text style={[styles.inviteTitle, { color: colors.primary }]}>Share this code</Text>
+        <Text style={[styles.inviteCode, { color: colors.primary }]}>{duet.inviteCode}</Text>
+        <Text style={[styles.inviteText, { color: colors.secondaryForeground }]}>
+          Tell {duet.partnerName} to open Duet and tap{" "}
+          <Text style={{ fontFamily: "Inter_600SemiBold" }}>Join with a code</Text>. The first
+          prompt will appear once they join.
+        </Text>
+      </Animated.View>
+    );
+  };
+
+  const renderPromptCard = () => {
+    if (isWaitingForPartner) return null;
+    return (
+      <Animated.View
+        layout={Layout.springify()}
+        style={[styles.promptCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+      >
+        <Text style={[styles.promptCategory, { color: colors.mutedForeground }]}>
+          PROMPT {duet.currentPromptIndex + 1}
+        </Text>
+        <Text style={[styles.promptText, { color: colors.foreground }]}>
+          {currentPrompt.prompt}
+        </Text>
+        <View style={styles.promptFooter}>
+          <View style={styles.timerBadge}>
+            <Feather name="clock" size={14} color={colors.mutedForeground} />
+            <Text style={[styles.timerText, { color: colors.mutedForeground }]}>
+              {formatTimeLeft(new Date(duet.currentPromptStartedAt).getTime())}
+            </Text>
+          </View>
         </View>
-      </View>
-    </Animated.View>
-  );
+      </Animated.View>
+    );
+  };
 
   const renderInput = () => {
     if (!isYourTurn) return null;
@@ -126,31 +146,45 @@ export default function SessionDetailScreen() {
         <Animated.View entering={FadeInDown.springify()} style={styles.inputContainer}>
           {selectedImage ? (
             <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: selectedImage }} style={styles.imagePreview} contentFit="cover" />
-              <Pressable style={[styles.removeImageBtn, { backgroundColor: colors.destructive }]} onPress={() => setSelectedImage(null)}>
+              <Image
+                source={{ uri: selectedImage }}
+                style={styles.imagePreview}
+                contentFit="cover"
+              />
+              <Pressable
+                style={[styles.removeImageBtn, { backgroundColor: colors.destructive }]}
+                onPress={() => setSelectedImage(null)}
+              >
                 <Feather name="x" size={16} color="#fff" />
               </Pressable>
             </View>
           ) : (
-            <Pressable 
-              style={[styles.photoUploadBtn, { backgroundColor: colors.card, borderColor: colors.border }]} 
+            <Pressable
+              style={[
+                styles.photoUploadBtn,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
               onPress={pickImage}
             >
               <Feather name="camera" size={32} color={colors.mutedForeground} />
-              <Text style={[styles.photoUploadText, { color: colors.mutedForeground }]}>Tap to add a photo</Text>
+              <Text style={[styles.photoUploadText, { color: colors.mutedForeground }]}>
+                Tap to add a photo
+              </Text>
             </Pressable>
           )}
-          
-          <Pressable 
+
+          <Pressable
             style={[
-              styles.submitButton, 
+              styles.submitButton,
               { backgroundColor: colors.primary },
-              !selectedImage && { opacity: 0.5 }
+              !selectedImage && { opacity: 0.5 },
             ]}
             onPress={handleSubmit}
             disabled={!selectedImage || submitResponse.isPending}
           >
-            <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>Send Response</Text>
+            <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>
+              Send Response
+            </Text>
             <Feather name="send" size={16} color={colors.primaryForeground} />
           </Pressable>
         </Animated.View>
@@ -160,11 +194,14 @@ export default function SessionDetailScreen() {
     return (
       <Animated.View entering={FadeInDown.springify()} style={styles.inputContainer}>
         <TextInput
-          style={[styles.textInput, { 
-            backgroundColor: colors.card, 
-            borderColor: colors.border,
-            color: colors.foreground 
-          }]}
+          style={[
+            styles.textInput,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              color: colors.foreground,
+            },
+          ]}
           placeholder="Write your response..."
           placeholderTextColor={colors.mutedForeground}
           multiline
@@ -172,16 +209,18 @@ export default function SessionDetailScreen() {
           onChangeText={setInputText}
           textAlignVertical="top"
         />
-        <Pressable 
+        <Pressable
           style={[
-            styles.submitButton, 
+            styles.submitButton,
             { backgroundColor: colors.primary },
-            !inputText.trim() && { opacity: 0.5 }
+            !inputText.trim() && { opacity: 0.5 },
           ]}
           onPress={handleSubmit}
           disabled={!inputText.trim() || submitResponse.isPending}
         >
-          <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>Send Response</Text>
+          <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>
+            Send Response
+          </Text>
           <Feather name="send" size={16} color={colors.primaryForeground} />
         </Pressable>
       </Animated.View>
@@ -191,24 +230,16 @@ export default function SessionDetailScreen() {
   const renderWaitingState = () => {
     if (!isWaiting) return null;
     return (
-      <Animated.View entering={FadeIn} style={[styles.waitingCard, { backgroundColor: colors.secondary }]}>
+      <Animated.View
+        entering={FadeIn}
+        style={[styles.waitingCard, { backgroundColor: colors.secondary }]}
+      >
         <Feather name="edit-2" size={24} color={colors.primary} />
-        <Text style={[styles.waitingTitle, { color: colors.primary }]}>They're thinking...</Text>
-        <Text style={[styles.waitingText, { color: colors.secondaryForeground }]}>
-          Your response is hidden until {session.partnerName} answers or time runs out.
+        <Text style={[styles.waitingTitle, { color: colors.primary }]}>
+          They're thinking...
         </Text>
-      </Animated.View>
-    );
-  };
-
-  const renderReadyToRevealState = () => {
-    if (!isReadyToReveal) return null;
-    return (
-      <Animated.View entering={FadeIn} style={[styles.waitingCard, { backgroundColor: colors.accent }]}>
-        <Feather name="unlock" size={24} color={colors.accentForeground} />
-        <Text style={[styles.waitingTitle, { color: colors.accentForeground }]}>Ready to reveal!</Text>
-        <Text style={[styles.waitingText, { color: colors.accentForeground }]}>
-          Opening...
+        <Text style={[styles.waitingText, { color: colors.secondaryForeground }]}>
+          Your answer is sealed until {duet.partnerName} responds or the 48 hours are up.
         </Text>
       </Animated.View>
     );
@@ -216,41 +247,61 @@ export default function SessionDetailScreen() {
 
   const renderRevealedState = () => {
     if (!isRevealed) return null;
-    
+
     return (
-      <Animated.View entering={FadeInDown.springify().delay(300)} style={styles.revealedContainer}>
+      <Animated.View
+        entering={FadeInDown.springify().delay(300)}
+        style={styles.revealedContainer}
+      >
         <View style={styles.responsesRow}>
-          <View style={[styles.responseCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View
+            style={[styles.responseCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
             <Text style={[styles.responseOwner, { color: colors.mutedForeground }]}>You</Text>
-            {currentPrompt.type === "photo" && session.currentPromptUserResponse?.startsWith('file://') ? (
-              <Image source={{ uri: session.currentPromptUserResponse }} style={styles.responseImage} contentFit="cover" />
+            {currentPrompt.type === "photo" && duet.myResponse?.startsWith("file://") ? (
+              <Image
+                source={{ uri: duet.myResponse }}
+                style={styles.responseImage}
+                contentFit="cover"
+              />
             ) : (
-              <Text style={[styles.responseText, { color: colors.foreground }]}>{session.currentPromptUserResponse}</Text>
+              <Text style={[styles.responseText, { color: colors.foreground }]}>
+                {duet.myResponse}
+              </Text>
             )}
           </View>
-          
-          <View style={[styles.responseCard, { backgroundColor: colors.secondary, borderColor: 'transparent' }]}>
-            <View style={styles.partnerResponseHeader}>
-              <Text style={[styles.responseOwner, { color: colors.secondaryForeground }]}>{session.partnerName}</Text>
-            </View>
+
+          <View
+            style={[
+              styles.responseCard,
+              { backgroundColor: colors.secondary, borderColor: "transparent" },
+            ]}
+          >
+            <Text style={[styles.responseOwner, { color: colors.secondaryForeground }]}>
+              {duet.partnerName}
+            </Text>
             {currentPrompt.type === "photo" ? (
-              <View style={[styles.photoPlaceholder, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
+              <View style={[styles.photoPlaceholder, { backgroundColor: "rgba(0,0,0,0.05)" }]}>
                 <Text style={[styles.photoPlaceholderText, { color: colors.secondaryForeground }]}>
-                  {session.currentPromptPartnerResponse}
+                  {duet.partnerResponse}
                 </Text>
               </View>
             ) : (
-              <Text style={[styles.responseText, { color: colors.secondaryForeground }]}>{session.currentPromptPartnerResponse}</Text>
+              <Text style={[styles.responseText, { color: colors.secondaryForeground }]}>
+                {duet.partnerResponse}
+              </Text>
             )}
           </View>
         </View>
 
-        <Pressable 
+        <Pressable
           style={[styles.nextButton, { backgroundColor: colors.primary }]}
-          onPress={() => nextPrompt.mutate({ sessionId: session.id })}
+          onPress={() => nextPrompt.mutate({ duetId: duet.id })}
           disabled={nextPrompt.isPending}
         >
-          <Text style={[styles.nextButtonText, { color: colors.primaryForeground }]}>Next Prompt</Text>
+          <Text style={[styles.nextButtonText, { color: colors.primaryForeground }]}>
+            Next Prompt
+          </Text>
           <Feather name="arrow-right" size={16} color={colors.primaryForeground} />
         </Pressable>
       </Animated.View>
@@ -258,48 +309,84 @@ export default function SessionDetailScreen() {
   };
 
   const renderHistory = () => {
-    if (!session.history || session.history.length === 0) return null;
+    if (!duet.history || duet.history.length === 0) return null;
 
     return (
       <View style={styles.historyContainer}>
         <Text style={[styles.historyTitle, { color: colors.mutedForeground }]}>Past Memories</Text>
-        {session.history.map((hist, index) => {
-          const prompt = PROMPTS.find(p => p.id === hist.promptId) || PROMPTS[0];
+        {duet.history.map((hist) => {
+          const prompt = PROMPTS[hist.promptIndex % PROMPTS.length];
           return (
-            <View key={index} style={[styles.historyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.historyPromptText, { color: colors.foreground }]}>{prompt.prompt}</Text>
-              
+            <View
+              key={hist.roundId}
+              style={[
+                styles.historyCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[styles.historyPromptText, { color: colors.foreground }]}>
+                {prompt.prompt}
+              </Text>
+
               <View style={styles.historyResponses}>
                 <View style={styles.historyResponseItem}>
-                  <Text style={[styles.historyResponseOwner, { color: colors.mutedForeground }]}>You</Text>
-                  {prompt.type === "photo" && hist.userResponse.startsWith('file://') ? (
-                    <Image source={{ uri: hist.userResponse }} style={styles.historyImage} contentFit="cover" />
+                  <Text style={[styles.historyResponseOwner, { color: colors.mutedForeground }]}>
+                    You
+                  </Text>
+                  {prompt.type === "photo" && hist.myResponse.startsWith("file://") ? (
+                    <Image
+                      source={{ uri: hist.myResponse }}
+                      style={styles.historyImage}
+                      contentFit="cover"
+                    />
                   ) : (
-                    <Text style={[styles.historyResponseText, { color: colors.foreground }]}>{hist.userResponse}</Text>
+                    <Text style={[styles.historyResponseText, { color: colors.foreground }]}>
+                      {hist.myResponse}
+                    </Text>
                   )}
                 </View>
-                
+
                 <View style={styles.historyDivider} />
-                
+
                 <View style={styles.historyResponseItem}>
-                  <Text style={[styles.historyResponseOwner, { color: colors.mutedForeground }]}>{session.partnerName}</Text>
+                  <Text style={[styles.historyResponseOwner, { color: colors.mutedForeground }]}>
+                    {duet.partnerName}
+                  </Text>
                   {prompt.type === "photo" ? (
-                    <View style={[styles.photoPlaceholder, { backgroundColor: 'rgba(0,0,0,0.05)', padding: 12 }]}>
-                      <Text style={[styles.photoPlaceholderText, { color: colors.foreground, fontSize: 13 }]}>
+                    <View
+                      style={[
+                        styles.photoPlaceholder,
+                        { backgroundColor: "rgba(0,0,0,0.05)", padding: 12 },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.photoPlaceholderText,
+                          { color: colors.foreground, fontSize: 13 },
+                        ]}
+                      >
                         {hist.partnerResponse}
                       </Text>
                     </View>
                   ) : (
-                    <Text style={[styles.historyResponseText, { color: colors.foreground }]}>{hist.partnerResponse}</Text>
+                    <Text style={[styles.historyResponseText, { color: colors.foreground }]}>
+                      {hist.partnerResponse}
+                    </Text>
                   )}
-                  
+
                   <View style={styles.reactionRow}>
-                    {!hist.userReaction ? (
+                    {!hist.myReaction ? (
                       <View style={styles.reactionPicker}>
-                        {REACTIONS.map(emoji => (
-                          <Pressable 
-                            key={emoji} 
-                            onPress={() => addReaction.mutate({ sessionId: session.id, reaction: emoji, historyIndex: index })}
+                        {REACTIONS.map((emoji) => (
+                          <Pressable
+                            key={emoji}
+                            onPress={() =>
+                              addReaction.mutate({
+                                duetId: duet.id,
+                                roundId: hist.roundId,
+                                reaction: emoji,
+                              })
+                            }
                             style={styles.reactionEmoji}
                           >
                             <Text style={styles.emojiText}>{emoji}</Text>
@@ -308,11 +395,20 @@ export default function SessionDetailScreen() {
                       </View>
                     ) : (
                       <View style={[styles.reactionBadge, { backgroundColor: colors.secondary }]}>
-                        <Text style={styles.emojiText}>{hist.userReaction}</Text>
+                        <Text style={styles.emojiText}>{hist.myReaction}</Text>
                       </View>
                     )}
                     {hist.partnerReaction && (
-                      <View style={[styles.reactionBadge, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+                      <View
+                        style={[
+                          styles.reactionBadge,
+                          {
+                            backgroundColor: colors.card,
+                            borderColor: colors.border,
+                            borderWidth: 1,
+                          },
+                        ]}
+                      >
                         <Text style={styles.emojiText}>{hist.partnerReaction}</Text>
                       </View>
                     )}
@@ -330,18 +426,18 @@ export default function SessionDetailScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {renderHeader()}
-        <ScrollView 
-          contentContainerStyle={{ 
-            paddingHorizontal: 20, 
+        <ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: 20,
             paddingBottom: insets.bottom + 40,
-            paddingTop: 16 
+            paddingTop: 16,
           }}
           showsVerticalScrollIndicator={false}
         >
+          {renderInviteState()}
           {renderPromptCard()}
           {renderInput()}
           {renderWaitingState()}
-          {renderReadyToRevealState()}
           {renderRevealedState()}
           {renderHistory()}
         </ScrollView>
@@ -351,9 +447,7 @@ export default function SessionDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -361,10 +455,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
   },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
+  backButton: { padding: 8, marginLeft: -8 },
   headerCenter: {
     flexDirection: "row",
     alignItems: "center",
@@ -397,6 +488,28 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 12,
   },
+  inviteCard: {
+    padding: 32,
+    borderRadius: 20,
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 24,
+  },
+  inviteTitle: {
+    fontFamily: "Fraunces_600SemiBold",
+    fontSize: 20,
+  },
+  inviteCode: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 40,
+    letterSpacing: 8,
+  },
+  inviteText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    textAlign: "center",
+    lineHeight: 22,
+  },
   promptCard: {
     padding: 24,
     borderRadius: 20,
@@ -415,9 +528,7 @@ const styles = StyleSheet.create({
     lineHeight: 32,
     marginBottom: 24,
   },
-  promptFooter: {
-    flexDirection: "row",
-  },
+  promptFooter: { flexDirection: "row" },
   timerBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -427,9 +538,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     fontSize: 13,
   },
-  inputContainer: {
-    gap: 16,
-  },
+  inputContainer: { gap: 16 },
   textInput: {
     minHeight: 120,
     padding: 16,
@@ -455,14 +564,11 @@ const styles = StyleSheet.create({
   imagePreviewContainer: {
     height: 240,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
-  imagePreview: {
-    width: '100%',
-    height: '100%',
-  },
+  imagePreview: { width: "100%", height: "100%" },
   removeImageBtn: {
-    position: 'absolute',
+    position: "absolute",
     top: 12,
     right: 12,
     width: 32,
@@ -499,12 +605,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
   },
-  revealedContainer: {
-    gap: 24,
-  },
-  responsesRow: {
-    gap: 16,
-  },
+  revealedContainer: { gap: 24 },
+  responsesRow: { gap: 16 },
   responseCard: {
     padding: 20,
     borderRadius: 16,
@@ -523,14 +625,9 @@ const styles = StyleSheet.create({
     lineHeight: 26,
   },
   responseImage: {
-    width: '100%',
+    width: "100%",
     height: 200,
     borderRadius: 8,
-  },
-  partnerResponseHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
   },
   photoPlaceholder: {
     padding: 16,
@@ -578,12 +675,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 24,
   },
-  historyResponses: {
-    gap: 12,
-  },
-  historyResponseItem: {
-    gap: 6,
-  },
+  historyResponses: { gap: 12 },
+  historyResponseItem: { gap: 6 },
   historyResponseOwner: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 12,
@@ -596,13 +689,13 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   historyImage: {
-    width: '100%',
+    width: "100%",
     height: 150,
     borderRadius: 8,
   },
   historyDivider: {
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.05)',
+    backgroundColor: "rgba(0,0,0,0.05)",
     marginVertical: 4,
   },
   reactionRow: {
@@ -613,7 +706,7 @@ const styles = StyleSheet.create({
   },
   reactionPicker: {
     flexDirection: "row",
-    backgroundColor: 'rgba(0,0,0,0.03)',
+    backgroundColor: "rgba(0,0,0,0.03)",
     borderRadius: 100,
     padding: 4,
     gap: 4,
@@ -627,7 +720,5 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 100,
   },
-  emojiText: {
-    fontSize: 16,
-  }
+  emojiText: { fontSize: 16 },
 });

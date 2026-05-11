@@ -1,23 +1,31 @@
 import { useRouter } from "expo-router";
 import { StyleSheet, Text, View, FlatList, Pressable, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useSessions } from "@/hooks/useDuet";
+import { useDuets } from "@/hooks/useDuet";
 import { useColors } from "@/hooks/useColors";
 import { Feather } from "@expo/vector-icons";
 import { formatTimeLeft } from "@/utils/time";
+import { useAuth } from "@/contexts/AuthContext";
+import { Redirect } from "expo-router";
 
 export default function HomeScreen() {
-  const { data: sessions, isLoading } = useSessions();
+  const { data: duets, isLoading } = useDuets();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
   const isWeb = Platform.OS === "web";
 
+  if (authLoading) {
+    return <View style={[styles.container, { backgroundColor: colors.background }]} />;
+  }
+
+  if (!user) {
+    return <Redirect href="/setup" />;
+  }
+
   if (isLoading) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-      </View>
-    );
+    return <View style={[styles.container, { backgroundColor: colors.background }]} />;
   }
 
   const renderEmpty = () => (
@@ -25,94 +33,143 @@ export default function HomeScreen() {
       <View style={[styles.emptyIconCircle, { backgroundColor: colors.secondary }]}>
         <Feather name="feather" size={32} color={colors.primary} />
       </View>
-      <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No sessions yet</Text>
+      <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No duets yet</Text>
       <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-        Start a shared journal with someone you care about.
+        Start a shared journal with someone you care about, or join one they started.
       </Text>
-      <Pressable
-        onPress={() => router.push("/new")}
-        style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-      >
-        <Feather name="plus" size={20} color={colors.primaryForeground} />
-        <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>Start a duet</Text>
-      </Pressable>
+      <View style={styles.emptyActions}>
+        <Pressable
+          onPress={() => router.push("/new")}
+          style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+        >
+          <Feather name="plus" size={20} color={colors.primaryForeground} />
+          <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>
+            Start a duet
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push("/join")}
+          style={[styles.secondaryButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <Feather name="link" size={20} color={colors.primary} />
+          <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>
+            Join with a code
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
-        data={sessions || []}
-        keyExtractor={item => item.id}
+        data={duets || []}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={{
           paddingBottom: insets.bottom + (isWeb ? 34 : 20),
           paddingTop: 16,
-          flexGrow: 1
+          flexGrow: 1,
         }}
         ListEmptyComponent={renderEmpty}
+        ListHeaderComponent={
+          duets && duets.length > 0 ? (
+            <Pressable
+              onPress={() => router.push("/join")}
+              style={[styles.joinBanner, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="link" size={16} color={colors.primary} />
+              <Text style={[styles.joinBannerText, { color: colors.primary }]}>
+                Join with a code
+              </Text>
+            </Pressable>
+          ) : null
+        }
         renderItem={({ item }) => {
-          const isYourTurn = !item.currentPromptUserResponse;
-          const isWaiting = item.currentPromptUserResponse && !item.currentPromptPartnerResponse;
+          const isYourTurn = !item.myResponse;
+          const isWaiting = item.myResponse && !item.revealed;
           const isRevealed = item.revealed;
-          
-          let statusText = "Waiting for you";
-          if (isWaiting) statusText = "They're thinking...";
-          if (isRevealed) statusText = "Ready to reveal";
-          
+          const waitingForPartner = !item.partnerJoined;
+
+          let statusText = "Your turn";
+          if (waitingForPartner) statusText = "Waiting for them to join";
+          else if (isWaiting) statusText = "Waiting for their answer";
+          else if (isRevealed) statusText = "Ready to read";
+
           return (
             <Pressable
               onPress={() => router.push(`/session/${item.id}`)}
-              style={({pressed}) => [
+              style={({ pressed }) => [
                 styles.card,
-                { 
+                {
                   backgroundColor: colors.card,
                   borderColor: colors.border,
-                  opacity: pressed ? 0.9 : 1
-                }
-              ]}>
-                <View style={styles.cardHeader}>
-                  <View style={styles.avatarRow}>
-                    <View style={[styles.avatar, { backgroundColor: item.partnerAvatarColor }]}>
-                      <Feather name={item.partnerAvatarIcon as any} size={20} color="#fff" />
-                    </View>
-                    <Text style={[styles.partnerName, { color: colors.foreground }]}>{item.partnerName}</Text>
+                  opacity: pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <View style={styles.cardHeader}>
+                <View style={styles.avatarRow}>
+                  <View style={[styles.avatar, { backgroundColor: item.partnerAvatarColor }]}>
+                    <Feather name={item.partnerAvatarIcon as any} size={20} color="#fff" />
                   </View>
-                  {item.streak > 0 && (
-                    <View style={[styles.streakBadge, { backgroundColor: colors.secondary }]}>
-                      <Feather name="zap" size={14} color={colors.primary} />
-                      <Text style={[styles.streakText, { color: colors.primary }]}>{item.streak}</Text>
-                    </View>
-                  )}
-                </View>
-                
-                <View style={styles.cardFooter}>
-                  <View style={[styles.statusBadge, { 
-                    backgroundColor: isYourTurn ? colors.primary : colors.muted 
-                  }]}>
-                    <Text style={[styles.statusText, { 
-                      color: isYourTurn ? colors.primaryForeground : colors.mutedForeground 
-                    }]}>
-                      {statusText}
-                    </Text>
-                  </View>
-                  <Text style={[styles.timeText, { color: colors.mutedForeground }]}>
-                    {formatTimeLeft(item.currentPromptStartedAt)}
+                  <Text style={[styles.partnerName, { color: colors.foreground }]}>
+                    {item.partnerName}
                   </Text>
                 </View>
-              </Pressable>
+                {item.streak > 0 && (
+                  <View style={[styles.streakBadge, { backgroundColor: colors.secondary }]}>
+                    <Feather name="zap" size={14} color={colors.primary} />
+                    <Text style={[styles.streakText, { color: colors.primary }]}>
+                      {item.streak}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.cardFooter}>
+                <View
+                  style={[
+                    styles.statusBadge,
+                    {
+                      backgroundColor:
+                        isYourTurn && !waitingForPartner ? colors.primary : colors.muted,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      {
+                        color:
+                          isYourTurn && !waitingForPartner
+                            ? colors.primaryForeground
+                            : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {statusText}
+                  </Text>
+                </View>
+                {!waitingForPartner && (
+                  <Text style={[styles.timeText, { color: colors.mutedForeground }]}>
+                    {formatTimeLeft(new Date(item.currentPromptStartedAt).getTime())}
+                  </Text>
+                )}
+              </View>
+            </Pressable>
           );
         }}
       />
-      
-      {sessions && sessions.length > 0 && (
+
+      {duets && duets.length > 0 && (
         <Pressable
           onPress={() => router.push("/new")}
           style={[
-            styles.fab, 
-            { 
+            styles.fab,
+            {
               backgroundColor: colors.primary,
-              bottom: insets.bottom + 24
-            }
+              bottom: insets.bottom + 24,
+            },
           ]}
         >
           <Feather name="plus" size={24} color={colors.primaryForeground} />
@@ -123,9 +180,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   emptyContainer: {
     flex: 1,
     alignItems: "center",
@@ -153,6 +208,11 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     lineHeight: 24,
   },
+  emptyActions: {
+    gap: 12,
+    width: "100%",
+    alignItems: "center",
+  },
   primaryButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -164,6 +224,33 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 16,
+  },
+  secondaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 100,
+    gap: 8,
+    borderWidth: 1,
+  },
+  secondaryButtonText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 16,
+  },
+  joinBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  joinBannerText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
   },
   card: {
     marginHorizontal: 16,
@@ -232,10 +319,6 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
     elevation: 5,
-  }
+  },
 });
