@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { useColors } from "@/hooks/useColors";
 import { useDuet } from "@/hooks/useDuet";
 import { PROMPTS } from "@/constants/prompts";
 import type { HistoryItem } from "@/lib/api";
-import Animated, { FadeIn, FadeInUp, SlideInDown } from "react-native-reanimated";
+import Animated, { FadeIn, SlideInDown } from "react-native-reanimated";
 
 const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -33,7 +33,7 @@ function startOfDay(d: Date) {
 type DayData = {
   date: Date;
   dateKey: string;
-  round: HistoryItem | null;
+  rounds: HistoryItem[];
   isToday: boolean;
   isBeforeStart: boolean;
   isFuture: boolean;
@@ -48,21 +48,26 @@ type MonthSection = {
 };
 
 function buildCalendar(createdAt: string, history: HistoryItem[]): MonthSection[] {
-  const roundByDate = new Map<string, HistoryItem>();
+  // Group rounds by date — multiple rounds can land on the same calendar day
+  const roundsByDate = new Map<string, HistoryItem[]>();
   for (const item of history) {
     if (item.completedAt) {
-      roundByDate.set(item.completedAt.slice(0, 10), item);
+      const key = item.completedAt.slice(0, 10);
+      if (!roundsByDate.has(key)) roundsByDate.set(key, []);
+      roundsByDate.get(key)!.push(item);
     }
   }
 
   const startDate = startOfDay(new Date(createdAt));
   const today = startOfDay(new Date());
 
-  // Extend a bit into the future so today is always visible
+  // Extend 6 months into the future
   const endDate = new Date(today);
-  endDate.setDate(endDate.getDate() + 6);
+  endDate.setMonth(endDate.getMonth() + 6);
+  // Always end on a Saturday to complete the last week row
+  endDate.setDate(endDate.getDate() + (6 - endDate.getDay()));
 
-  // Rewind to Sunday before start
+  // Rewind to Sunday before the duet start
   const calStart = new Date(startDate);
   calStart.setDate(calStart.getDate() - calStart.getDay());
 
@@ -71,21 +76,23 @@ function buildCalendar(createdAt: string, history: HistoryItem[]): MonthSection[
   let currentWeek: WeekRow = [];
 
   const cur = new Date(calStart);
+  const todayKey = toDateKey(today);
 
   while (cur <= endDate) {
     const monthKey = `${cur.getFullYear()}-${cur.getMonth()}`;
 
     if (!currentMonth || currentMonth.monthKey !== monthKey) {
+      // Pad current week to 7 before starting new month
       if (currentWeek.length > 0) {
         while (currentWeek.length < 7) {
           const pad = new Date(cur);
           currentWeek.push({
             date: pad,
             dateKey: toDateKey(pad),
-            round: null,
-            isToday: false,
-            isBeforeStart: true,
-            isFuture: true,
+            rounds: [],
+            isToday: toDateKey(pad) === todayKey,
+            isBeforeStart: pad < startDate,
+            isFuture: pad > today,
           });
           cur.setDate(cur.getDate() + 1);
         }
@@ -93,7 +100,10 @@ function buildCalendar(createdAt: string, history: HistoryItem[]): MonthSection[
         currentWeek = [];
       }
       currentMonth = {
-        title: cur.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+        title: new Date(cur).toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        }),
         monthKey,
         data: [],
       };
@@ -103,12 +113,12 @@ function buildCalendar(createdAt: string, history: HistoryItem[]): MonthSection[
     const dateKey = toDateKey(cur);
     const isBeforeStart = cur < startDate;
     const isFuture = cur > today;
-    const isToday = toDateKey(cur) === toDateKey(today);
+    const isToday = dateKey === todayKey;
 
     currentWeek.push({
       date: new Date(cur),
       dateKey,
-      round: isBeforeStart || isFuture ? null : (roundByDate.get(dateKey) ?? null),
+      rounds: isBeforeStart || isFuture ? [] : (roundsByDate.get(dateKey) ?? []),
       isToday,
       isBeforeStart,
       isFuture,
@@ -144,45 +154,70 @@ export default function CalendarScreen() {
 
   if (isLoading || !duet) return null;
 
-  const selectedPrompt = selectedDay?.round
-    ? PROMPTS[selectedDay.round.promptIndex % PROMPTS.length]
-    : null;
-
-  const totalDays = duet.history.length;
+  const totalAnswered = duet.history.length;
 
   const renderDayCell = (day: DayData) => {
-    const hasRound = !!day.round;
-    const isToday = day.isToday;
-    const isBlank = day.isBeforeStart || day.isFuture;
+    const count = day.rounds.length;
+    const hasRound = count > 0;
+    const { isToday, isBeforeStart, isFuture } = day;
+    const isInvisible = isBeforeStart;
+    const tappable = hasRound && !isBeforeStart && !isFuture;
+
+    // Visual state
+    let circleStyle: object = {};
+    let numberColor = colors.mutedForeground;
+    let numberWeight = "Inter_400Regular";
+
+    if (isInvisible) {
+      // Cells before duet started: completely hidden
+    } else if (isToday) {
+      // Today: sage/secondary filled, bolder number
+      circleStyle = { backgroundColor: colors.secondary, borderWidth: 2, borderColor: colors.primary };
+      numberColor = colors.primary;
+      numberWeight = "Inter_700Bold";
+    } else if (hasRound) {
+      // Answered day: terracotta primary fill
+      circleStyle = { backgroundColor: colors.primary };
+      numberColor = colors.primaryForeground;
+      numberWeight = "Inter_600SemiBold";
+    } else if (isFuture) {
+      // Future: no fill, very faint number
+      numberColor = colors.border;
+    }
+    // else: past unanswered — just muted number, no fill
 
     return (
       <Pressable
         key={day.dateKey}
-        onPress={() => !isBlank && hasRound && setSelectedDay(day)}
-        style={[styles.dayCell]}
-        disabled={isBlank || !hasRound}
+        onPress={() => tappable && setSelectedDay(day)}
+        style={styles.dayCell}
+        disabled={!tappable}
       >
         <View
           style={[
             styles.dayCircle,
-            hasRound && { backgroundColor: colors.primary },
-            isToday && !hasRound && { borderWidth: 2, borderColor: colors.primary },
-            isBlank && { opacity: 0 },
+            circleStyle,
+            isInvisible && { opacity: 0 },
           ]}
         >
-          {!isBlank && (
-            <Text
-              style={[
-                styles.dayNumber,
-                { color: hasRound ? colors.primaryForeground : colors.mutedForeground },
-                isToday && !hasRound && { color: colors.primary, fontFamily: "Inter_700Bold" },
-              ]}
-            >
-              {day.date.getDate()}
-            </Text>
+          <Text style={[styles.dayNumber, { color: numberColor, fontFamily: numberWeight as any }]}>
+            {day.date.getDate()}
+          </Text>
+
+          {/* Prompt count badge — shown when > 1 round on the same day */}
+          {hasRound && count > 1 && (
+            <View style={[styles.countBadge, { backgroundColor: colors.primaryForeground }]}>
+              <Text style={[styles.countText, { color: colors.primary }]}>{count}</Text>
+            </View>
           )}
         </View>
-        {hasRound && (
+
+        {/* Single dot under answered days */}
+        {hasRound && !isToday && (
+          <View style={[styles.dot, { backgroundColor: colors.primary }]} />
+        )}
+        {/* Today indicator dot (different color) */}
+        {isToday && !hasRound && (
           <View style={[styles.dot, { backgroundColor: colors.primary }]} />
         )}
       </Pressable>
@@ -214,7 +249,7 @@ export default function CalendarScreen() {
 
       {/* Stats row */}
       <Animated.View
-        entering={FadeIn.delay(100)}
+        entering={FadeIn.delay(80)}
         style={[styles.statsRow, { borderBottomColor: colors.border }]}
       >
         <View style={styles.statItem}>
@@ -223,7 +258,7 @@ export default function CalendarScreen() {
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.primary }]}>{totalDays}</Text>
+          <Text style={[styles.statValue, { color: colors.primary }]}>{totalAnswered}</Text>
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>answered</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
@@ -237,7 +272,7 @@ export default function CalendarScreen() {
         </View>
       </Animated.View>
 
-      {/* Day of week header */}
+      {/* Day-of-week header — sticky */}
       <View style={[styles.dowRow, { borderBottomColor: colors.border }]}>
         {DAY_LABELS.map((d) => (
           <Text key={d} style={[styles.dowLabel, { color: colors.mutedForeground }]}>
@@ -251,9 +286,8 @@ export default function CalendarScreen() {
         sections={sections}
         keyExtractor={(week, idx) => `week-${idx}`}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={{
-          paddingBottom: insets.bottom + 32,
-        }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         renderSectionHeader={({ section }) => (
           <View style={[styles.monthHeader, { backgroundColor: colors.background }]}>
             <Text style={[styles.monthTitle, { color: colors.foreground }]}>
@@ -262,9 +296,7 @@ export default function CalendarScreen() {
           </View>
         )}
         renderItem={({ item: week }) => (
-          <View style={styles.weekRow}>
-            {week.map(renderDayCell)}
-          </View>
+          <View style={styles.weekRow}>{week.map(renderDayCell)}</View>
         )}
       />
 
@@ -276,19 +308,27 @@ export default function CalendarScreen() {
         ]}
       >
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-          <Text style={[styles.legendText, { color: colors.mutedForeground }]}>
-            prompt answered
-          </Text>
+          <View style={[styles.legendCircle, { backgroundColor: colors.primary }]} />
+          <Text style={[styles.legendText, { color: colors.mutedForeground }]}>answered</Text>
         </View>
         <View style={styles.legendItem}>
           <View
             style={[
-              styles.legendDot,
-              { backgroundColor: "transparent", borderWidth: 2, borderColor: colors.primary },
+              styles.legendCircle,
+              {
+                backgroundColor: colors.secondary,
+                borderWidth: 2,
+                borderColor: colors.primary,
+              },
             ]}
           />
           <Text style={[styles.legendText, { color: colors.mutedForeground }]}>today</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendCircle, { backgroundColor: "transparent" }]}>
+            <Text style={[styles.legendFutureNum, { color: colors.border }]}>9</Text>
+          </View>
+          <Text style={[styles.legendText, { color: colors.mutedForeground }]}>upcoming</Text>
         </View>
       </View>
 
@@ -304,19 +344,14 @@ export default function CalendarScreen() {
             entering={SlideInDown.springify().damping(20)}
             style={[
               styles.modalSheet,
-              {
-                backgroundColor: colors.card,
-                paddingBottom: insets.bottom + 24,
-              },
+              { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 },
             ]}
           >
             <Pressable onPress={(e) => e.stopPropagation()}>
-              {/* Handle */}
               <View style={styles.sheetHandleRow}>
                 <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
               </View>
 
-              {/* Date */}
               <Text style={[styles.sheetDate, { color: colors.mutedForeground }]}>
                 {selectedDay?.date.toLocaleDateString("en-US", {
                   weekday: "long",
@@ -325,43 +360,54 @@ export default function CalendarScreen() {
                 })}
               </Text>
 
-              {/* Prompt */}
-              {selectedPrompt && (
-                <Text style={[styles.sheetPrompt, { color: colors.foreground }]}>
-                  {selectedPrompt.prompt}
-                </Text>
-              )}
-
               <ScrollView
                 showsVerticalScrollIndicator={false}
-                style={{ maxHeight: 360 }}
-                contentContainerStyle={{ gap: 12, paddingBottom: 8 }}
+                style={{ maxHeight: 420 }}
+                contentContainerStyle={{ gap: 20, paddingBottom: 8 }}
               >
-                {/* Your response */}
-                <View style={[styles.responseCard, { backgroundColor: colors.secondary }]}>
-                  <Text style={[styles.responseOwner, { color: colors.secondaryForeground }]}>
-                    You
-                  </Text>
-                  <Text style={[styles.responseText, { color: colors.foreground }]}>
-                    {selectedDay?.round?.myResponse}
-                  </Text>
-                  {selectedDay?.round?.myReaction && (
-                    <Text style={styles.reactionText}>{selectedDay.round.myReaction}</Text>
-                  )}
-                </View>
+                {selectedDay?.rounds.map((round, i) => {
+                  const prompt = PROMPTS[round.promptIndex % PROMPTS.length];
+                  return (
+                    <View key={round.roundId} style={styles.sheetRound}>
+                      {selectedDay.rounds.length > 1 && (
+                        <Text style={[styles.sheetRoundNum, { color: colors.mutedForeground }]}>
+                          Prompt {i + 1}
+                        </Text>
+                      )}
+                      <Text style={[styles.sheetPrompt, { color: colors.foreground }]}>
+                        {prompt.prompt}
+                      </Text>
 
-                {/* Partner response */}
-                <View style={[styles.responseCard, { backgroundColor: colors.muted }]}>
-                  <Text style={[styles.responseOwner, { color: colors.mutedForeground }]}>
-                    {duet.partnerName}
-                  </Text>
-                  <Text style={[styles.responseText, { color: colors.foreground }]}>
-                    {selectedDay?.round?.partnerResponse}
-                  </Text>
-                  {selectedDay?.round?.partnerReaction && (
-                    <Text style={styles.reactionText}>{selectedDay.round.partnerReaction}</Text>
-                  )}
-                </View>
+                      <View
+                        style={[styles.responseCard, { backgroundColor: colors.secondary }]}
+                      >
+                        <Text
+                          style={[styles.responseOwner, { color: colors.secondaryForeground }]}
+                        >
+                          You
+                        </Text>
+                        <Text style={[styles.responseText, { color: colors.foreground }]}>
+                          {round.myResponse}
+                        </Text>
+                        {round.myReaction && (
+                          <Text style={styles.reactionText}>{round.myReaction}</Text>
+                        )}
+                      </View>
+
+                      <View style={[styles.responseCard, { backgroundColor: colors.muted }]}>
+                        <Text style={[styles.responseOwner, { color: colors.mutedForeground }]}>
+                          {duet.partnerName}
+                        </Text>
+                        <Text style={[styles.responseText, { color: colors.foreground }]}>
+                          {round.partnerResponse}
+                        </Text>
+                        {round.partnerReaction && (
+                          <Text style={styles.reactionText}>{round.partnerReaction}</Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
               </ScrollView>
 
               <Pressable
@@ -380,7 +426,7 @@ export default function CalendarScreen() {
   );
 }
 
-const CELL_SIZE = 44;
+const CELL_SIZE = 42;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -406,18 +452,23 @@ const styles = StyleSheet.create({
 
   statsRow: {
     flexDirection: "row",
-    paddingVertical: 20,
+    paddingVertical: 18,
     paddingHorizontal: 24,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   statItem: { flex: 1, alignItems: "center", gap: 4 },
-  statValue: { fontFamily: "Fraunces_700Bold", fontSize: 32 },
-  statLabel: { fontFamily: "Inter_500Medium", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 },
+  statValue: { fontFamily: "Fraunces_700Bold", fontSize: 30 },
+  statLabel: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   statDivider: { width: StyleSheet.hairlineWidth, marginVertical: 4 },
 
   dowRow: {
     flexDirection: "row",
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
@@ -432,23 +483,20 @@ const styles = StyleSheet.create({
 
   monthHeader: {
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 8,
+    paddingTop: 22,
+    paddingBottom: 6,
   },
-  monthTitle: {
-    fontFamily: "Fraunces_600SemiBold",
-    fontSize: 20,
-  },
+  monthTitle: { fontFamily: "Fraunces_600SemiBold", fontSize: 19 },
 
   weekRow: {
     flexDirection: "row",
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
   },
   dayCell: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: 4,
-    gap: 3,
+    paddingVertical: 5,
+    gap: 4,
   },
   dayCircle: {
     width: CELL_SIZE,
@@ -458,8 +506,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   dayNumber: {
-    fontFamily: "Inter_500Medium",
     fontSize: 14,
+  },
+  countBadge: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  countText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 9,
   },
   dot: {
     width: 5,
@@ -470,17 +531,18 @@ const styles = StyleSheet.create({
   legend: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 24,
-    paddingVertical: 14,
+    gap: 20,
+    paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  legendDot: { width: 12, height: 12, borderRadius: 6 },
+  legendCircle: { width: 14, height: 14, borderRadius: 7, alignItems: "center", justifyContent: "center" },
+  legendFutureNum: { fontFamily: "Inter_400Regular", fontSize: 9 },
   legendText: { fontFamily: "Inter_400Regular", fontSize: 12 },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "flex-end",
   },
   modalSheet: {
@@ -494,19 +556,26 @@ const styles = StyleSheet.create({
   sheetHandle: { width: 40, height: 4, borderRadius: 2 },
   sheetDate: {
     fontFamily: "Inter_500Medium",
-    fontSize: 13,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  sheetRound: { gap: 10 },
+  sheetRoundNum: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   sheetPrompt: {
     fontFamily: "Fraunces_600SemiBold",
-    fontSize: 22,
-    lineHeight: 30,
+    fontSize: 21,
+    lineHeight: 29,
   },
   responseCard: {
-    padding: 16,
+    padding: 14,
     borderRadius: 14,
-    gap: 8,
+    gap: 6,
   },
   responseOwner: {
     fontFamily: "Inter_600SemiBold",
@@ -516,15 +585,15 @@ const styles = StyleSheet.create({
   },
   responseText: {
     fontFamily: "Inter_400Regular",
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  reactionText: { fontSize: 20 },
+  reactionText: { fontSize: 18 },
   closeButton: {
     padding: 16,
     borderRadius: 100,
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 4,
   },
   closeButtonText: { fontFamily: "Inter_600SemiBold", fontSize: 16 },
 });
