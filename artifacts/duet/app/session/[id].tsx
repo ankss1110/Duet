@@ -90,6 +90,12 @@ export default function SessionDetailScreen() {
             <Text style={[styles.streakText, { color: colors.primary }]}>{duet.streak}</Text>
           </View>
         )}
+        <Pressable
+          onPress={() => router.push(`/session/calendar/${id}`)}
+          style={[styles.calendarButton, { backgroundColor: colors.secondary }]}
+        >
+          <Feather name="calendar" size={16} color={colors.primary} />
+        </Pressable>
       </View>
     </View>
   );
@@ -473,8 +479,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   headerRight: {
-    width: 48,
-    alignItems: "flex-end",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  calendarButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   streakBadge: {
     flexDirection: "row",

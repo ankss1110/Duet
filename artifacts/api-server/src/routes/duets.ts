@@ -38,6 +38,7 @@ function formatDuetState(
     streak: duet.streak,
     currentPromptIndex: duet.currentPromptIndex,
     currentPromptStartedAt: duet.currentPromptStartedAt.toISOString(),
+    duetCreatedAt: duet.createdAt.toISOString(),
     myResponse: myRaw ?? null,
     partnerResponse: revealed ? (theirRaw ?? null) : null,
     revealed,

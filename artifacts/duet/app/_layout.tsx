@@ -52,6 +52,7 @@ function RootLayoutNav() {
       <Stack.Screen name="new" options={{ title: "New Duet", presentation: "modal" }} />
       <Stack.Screen name="join" options={{ title: "Join a Duet", presentation: "modal" }} />
       <Stack.Screen name="session/[id]" options={{ title: "", headerShown: false }} />
+      <Stack.Screen name="session/calendar/[id]" options={{ title: "", headerShown: false }} />
     </Stack>
   );
 }

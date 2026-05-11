@@ -59,6 +59,7 @@ export type DuetState = {
   streak: number;
   currentPromptIndex: number;
   currentPromptStartedAt: string;
+  duetCreatedAt: string;
   myResponse: string | null;
   partnerResponse: string | null;
   revealed: boolean;
