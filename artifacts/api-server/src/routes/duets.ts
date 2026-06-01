@@ -4,6 +4,24 @@ import { and, asc, desc, eq, isNull, not, or } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import type { Duet, Round, PromptSuggestion } from "@workspace/db";
 
+async function sendPushNotification(
+  token: string | null | undefined,
+  title: string,
+  body: string,
+  data: Record<string, string> = {},
+) {
+  if (!token || !token.startsWith("ExponentPushToken")) return;
+  try {
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ to: token, title, body, data, sound: "default" }),
+    });
+  } catch {
+    // Best-effort — never fail the request over a notification
+  }
+}
+
 const router = Router();
 
 const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -269,12 +287,51 @@ router.post("/duets/:id/respond", requireAuth, async (req, res) => {
     .from(roundsTable)
     .where(eq(roundsTable.id, activeRound.id));
 
-  if (updatedRound.creatorResponse && updatedRound.partnerResponse && !updatedRound.revealedAt) {
+  const bothResponded =
+    updatedRound.creatorResponse && updatedRound.partnerResponse && !updatedRound.revealedAt;
+
+  if (bothResponded) {
     await db
       .update(roundsTable)
       .set({ revealedAt: new Date() })
       .where(eq(roundsTable.id, activeRound.id));
   }
+
+  // Fire push notifications async — don't block the response
+  (async () => {
+    const partnerId = isCreator ? duet.partnerId! : duet.creatorId;
+    const [partnerUser, myUser] = await Promise.all([
+      db.select().from(usersTable).where(eq(usersTable.id, partnerId)).limit(1),
+      db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1),
+    ]);
+    const myName = myUser[0]?.displayName ?? "Your partner";
+    const data = { duetId: id };
+
+    if (bothResponded) {
+      // Both answered — notify the partner (who just triggered reveal) AND the first responder
+      // Partner was notified above as "your turn", now tell first responder reveal is ready
+      const firstResponderId = isCreator ? duet.partnerId! : duet.creatorId;
+      const [firstResponder] = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, firstResponderId))
+        .limit(1);
+      await sendPushNotification(
+        firstResponder?.expoPushToken,
+        "Answers revealed! 🎉",
+        `${myName} answered — tap to see both responses.`,
+        data,
+      );
+    } else {
+      // Only one person has answered — nudge the partner
+      await sendPushNotification(
+        partnerUser[0]?.expoPushToken,
+        `${myName} answered ✨`,
+        "They're waiting to see your answer.",
+        data,
+      );
+    }
+  })().catch(() => {});
 
   const state = await getFullDuetState(id, userId);
   res.json(state);

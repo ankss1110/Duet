@@ -134,4 +134,10 @@ export const api = {
 
   removeSuggestion: (id: string, suggestionId: string) =>
     request<DuetState>(`/duets/${id}/suggest/${suggestionId}`, { method: "DELETE" }),
+
+  registerPushToken: (token: string) =>
+    request<void>("/users/me/push-token", {
+      method: "PATCH",
+      body: JSON.stringify({ token }),
+    }),
 };

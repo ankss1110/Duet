@@ -8,6 +8,7 @@ export const usersTable = pgTable("users", {
   avatarColor: text("avatar_color").notNull(),
   avatarIcon: text("avatar_icon").notNull(),
   deviceToken: text("device_token").notNull().unique(),
+  expoPushToken: text("expo_push_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -49,4 +49,17 @@ router.get("/users/me", requireAuth, async (req, res) => {
   });
 });
 
+router.patch("/users/me/push-token", requireAuth, async (req, res) => {
+  const { token } = req.body;
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ error: "token is required" });
+    return;
+  }
+  await db
+    .update(usersTable)
+    .set({ expoPushToken: token })
+    .where(eq(usersTable.id, req.user.id));
+  res.status(204).end();
+});
+
 export default router;

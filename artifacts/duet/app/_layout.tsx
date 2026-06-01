@@ -22,12 +22,19 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
+
+function PushNotificationSetup() {
+  const { user } = useAuth();
+  usePushNotifications(user?.id);
+  return null;
+}
 
 function RootLayoutNav() {
   const colors = useColors();
@@ -88,6 +95,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
+        <PushNotificationSetup />
         <ErrorBoundary>
           <QueryClientProvider client={queryClient}>
             <GestureHandlerRootView>
