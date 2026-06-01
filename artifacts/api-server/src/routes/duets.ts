@@ -80,6 +80,13 @@ function formatDuetState(
       type: s.promptType,
       suggestedByMe: s.suggestedById === userId,
     })),
+    todayCompletedCount: (() => {
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      return historyRounds.filter(
+        (r) => r.completedAt && r.completedAt >= startOfToday,
+      ).length;
+    })(),
   };
 }
 
@@ -355,6 +362,24 @@ router.post("/duets/:id/next", requireAuth, async (req, res) => {
 
   const isCreator = duet.creatorId === userId;
   const activeRound = await getOrCreateActiveRound(id, duet.currentPromptIndex);
+
+  // Guard: daily limit of 3 completed rounds per duet per day
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+  const todayRounds = await db
+    .select({ id: roundsTable.id })
+    .from(roundsTable)
+    .where(
+      and(
+        eq(roundsTable.duetId, id),
+        not(isNull(roundsTable.completedAt)),
+        gte(roundsTable.completedAt, startOfToday),
+      ),
+    );
+  if (todayRounds.length >= 3) {
+    res.status(400).json({ error: "Daily limit of 3 prompts reached. Come back tomorrow!" });
+    return;
+  }
 
   // Guard: both players must have responded before anyone can advance
   if (!activeRound.revealedAt) {

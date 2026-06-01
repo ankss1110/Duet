@@ -95,9 +95,31 @@ export default function SessionDetailScreen() {
       </View>
       <View style={styles.headerRight}>
         {duet.streak > 0 && (
-          <View style={[styles.streakBadge, { backgroundColor: colors.secondary }]}>
-            <Feather name="zap" size={14} color={colors.primary} />
-            <Text style={[styles.streakText, { color: colors.primary }]}>{duet.streak}</Text>
+          <View
+            style={[
+              styles.streakBadge,
+              {
+                backgroundColor:
+                  duet.todayCompletedCount >= 3 ? colors.primary : colors.secondary,
+              },
+            ]}
+          >
+            <Feather
+              name="zap"
+              size={14}
+              color={duet.todayCompletedCount >= 3 ? colors.primaryForeground : colors.primary}
+            />
+            <Text
+              style={[
+                styles.streakText,
+                {
+                  color:
+                    duet.todayCompletedCount >= 3 ? colors.primaryForeground : colors.primary,
+                },
+              ]}
+            >
+              {duet.streak}
+            </Text>
           </View>
         )}
         <Pressable
@@ -310,16 +332,28 @@ export default function SessionDetailScreen() {
           </View>
         </View>
 
-        <Pressable
-          style={[styles.nextButton, { backgroundColor: colors.primary }]}
-          onPress={() => nextPrompt.mutate({ duetId: duet.id })}
-          disabled={nextPrompt.isPending}
-        >
-          <Text style={[styles.nextButtonText, { color: colors.primaryForeground }]}>
-            Next Prompt
-          </Text>
-          <Feather name="arrow-right" size={16} color={colors.primaryForeground} />
-        </Pressable>
+        {duet.todayCompletedCount >= 3 ? (
+          <View style={[styles.dailyLimitCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+            <Feather name="zap" size={20} color={colors.primary} />
+            <Text style={[styles.dailyLimitTitle, { color: colors.primary }]}>
+              You've done 3 today!
+            </Text>
+            <Text style={[styles.dailyLimitText, { color: colors.secondaryForeground }]}>
+              Come back tomorrow for the next prompt.
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            style={[styles.nextButton, { backgroundColor: colors.primary }]}
+            onPress={() => nextPrompt.mutate({ duetId: duet.id })}
+            disabled={nextPrompt.isPending}
+          >
+            <Text style={[styles.nextButtonText, { color: colors.primaryForeground }]}>
+              Next Prompt
+            </Text>
+            <Feather name="arrow-right" size={16} color={colors.primaryForeground} />
+          </Pressable>
+        )}
       </Animated.View>
     );
   };
@@ -1018,5 +1052,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     textAlignVertical: "top",
+  },
+  dailyLimitCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+    gap: 8,
+  },
+  dailyLimitTitle: {
+    fontFamily: "Fraunces_600SemiBold",
+    fontSize: 18,
+    textAlign: "center",
+  },
+  dailyLimitText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
   },
 });
