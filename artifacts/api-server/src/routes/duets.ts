@@ -299,16 +299,39 @@ router.post("/duets/:id/next", requireAuth, async (req, res) => {
   const isCreator = duet.creatorId === userId;
   const activeRound = await getOrCreateActiveRound(id, duet.currentPromptIndex);
 
+  // Guard: both players must have responded before anyone can advance
+  if (!activeRound.revealedAt) {
+    res.status(400).json({ error: "Both players must respond before advancing" });
+    return;
+  }
+
+  // Guard: if this round was already completed by the other player racing us,
+  // just return the latest state — don't double-advance
+  if (activeRound.completedAt) {
+    const state = await getFullDuetState(id, userId);
+    res.json(state);
+    return;
+  }
+
   const reactionField = reaction
     ? isCreator
       ? { creatorReaction: reaction }
       : { partnerReaction: reaction }
     : {};
 
-  await db
+  // Atomic update: only succeeds if completedAt is still NULL (prevents race)
+  const completed = await db
     .update(roundsTable)
     .set({ completedAt: new Date(), ...reactionField })
-    .where(eq(roundsTable.id, activeRound.id));
+    .where(and(eq(roundsTable.id, activeRound.id), isNull(roundsTable.completedAt)))
+    .returning({ id: roundsTable.id });
+
+  if (completed.length === 0) {
+    // Other player completed this round a moment before us — return current state
+    const state = await getFullDuetState(id, userId);
+    res.json(state);
+    return;
+  }
 
   const msSinceStart = Date.now() - duet.currentPromptStartedAt.getTime();
   const withinTimer = msSinceStart < 48 * 60 * 60 * 1000;

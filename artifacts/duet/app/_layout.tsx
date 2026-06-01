@@ -12,6 +12,7 @@ import {
   Fraunces_700Bold,
   useFonts as useFrauncesFonts,
 } from "@expo-google-fonts/fraunces";
+import { Feather } from "@expo/vector-icons";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -63,6 +64,7 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    ...Feather.font,
   });
 
   const [frauncesLoaded, frauncesError] = useFrauncesFonts({
