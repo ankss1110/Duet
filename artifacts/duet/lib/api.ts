@@ -76,6 +76,7 @@ export type DuetState = {
   revealed: boolean;
   history: HistoryItem[];
   pendingSuggestions: PromptSuggestion[];
+  todayCompletedCount: number;
 };
 
 export const api = {

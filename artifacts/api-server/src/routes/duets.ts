@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, duetsTable, roundsTable, usersTable, promptSuggestionsTable } from "@workspace/db";
-import { and, asc, desc, eq, isNull, not, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, not, or } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import type { Duet, Round, PromptSuggestion } from "@workspace/db";
 
