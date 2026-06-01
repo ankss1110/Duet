@@ -16,6 +16,114 @@ Features:
 
 ---
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Replit Reverse Proxy                         │
+│                    (path-based routing, TLS)                        │
+└───────────────────┬─────────────────────────┬───────────────────────┘
+                    │  /api/*                  │  /*
+                    ▼                          ▼
+      ┌─────────────────────────┐   ┌──────────────────────────┐
+      │     API Server          │   │     Expo App             │
+      │   Express 5 + TypeScript│   │  React Native + Router   │
+      │   Port: $PORT           │   │  Port: $PORT             │
+      │                         │   │                          │
+      │  ┌───────────────────┐  │   │  ┌────────────────────┐  │
+      │  │   Route handlers  │  │   │  │  Screens & hooks   │  │
+      │  │  /users           │  │   │  │  TanStack Query    │  │
+      │  │  /duets           │  │   │  │  (6s polling)      │  │
+      │  │  /duets/:id/…     │  │   │  └────────────────────┘  │
+      │  └────────┬──────────┘  │   │  ┌────────────────────┐  │
+      │           │             │   │  │  AsyncStorage      │  │
+      │  ┌────────▼──────────┐  │   │  │  (device token)    │  │
+      │  │   Drizzle ORM     │  │   │  └────────────────────┘  │
+      │  └────────┬──────────┘  │   └──────────────────────────┘
+      │           │             │
+      └───────────┼─────────────┘
+                  │
+                  ▼
+      ┌─────────────────────────┐
+      │      PostgreSQL         │
+      │                         │
+      │  users                  │
+      │  ├─ id, displayName     │
+      │  ├─ deviceToken         │
+      │  └─ expoPushToken       │
+      │                         │
+      │  duets                  │
+      │  ├─ creatorId           │
+      │  ├─ partnerId           │
+      │  ├─ inviteCode          │
+      │  ├─ currentPromptIndex  │
+      │  └─ streak              │
+      │                         │
+      │  rounds                 │
+      │  ├─ promptIndex         │
+      │  ├─ creatorResponse     │
+      │  ├─ partnerResponse     │
+      │  ├─ revealedAt          │
+      │  └─ completedAt         │
+      │                         │
+      │  promptSuggestions      │
+      │  ├─ promptText          │
+      │  ├─ promptType          │
+      │  └─ status              │
+      └─────────────────────────┘
+
+                  ┌─────────────────────────────────┐
+                  │   Expo Push Notification Service  │
+                  │   exp.host/--/api/v2/push/send   │
+                  └──────────────┬──────────────────┘
+                                 │  push to device token
+                                 ▼
+                  ┌──────────────────────────┐
+                  │   iOS / Android device   │
+                  │   (Expo Go or standalone)│
+                  └──────────────────────────┘
+```
+
+### Request flow — submitting an answer
+
+```
+Device                  API Server              PostgreSQL       Partner device
+  │                          │                       │                 │
+  │── POST /duets/:id/respond─▶                      │                 │
+  │                          │── UPDATE rounds ──────▶                 │
+  │                          │   (set my response)   │                 │
+  │                          │                       │                 │
+  │                          │   both responded?      │                 │
+  │                          │── SET revealedAt ─────▶                 │
+  │                          │                       │                 │
+  │                          │── SELECT partner  ────▶                 │
+  │                          │   push token          │                 │
+  │◀── 200 duet state ───────│                       │                 │
+  │                          │                       │                 │
+  │                          │── fire & forget push notification ──────▶
+  │                          │                       │                 │
+```
+
+### Round state machine
+
+```
+           partner joins
+WAITING ──────────────────▶ ACTIVE
+                               │
+                        both respond
+                               │
+                               ▼
+                           REVEALED
+                               │
+                     one player taps Next
+                     (max 3/day enforced)
+                               │
+                               ▼
+                          COMPLETED  ──▶  new ACTIVE round
+```
+
+---
+
 ## Project structure
 
 ```
